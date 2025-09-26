@@ -1,0 +1,529 @@
+#include <Arduino.h>
+#include <WiFi.h>
+#include <esp_now.h>
+#include <FastLED.h>
+
+#define NUM_LEDS_score 105  // Total number of LEDs for five displays (21 LEDs each)
+CRGB leds_score[NUM_LEDS_score];  // Define LEDs strip for all displays
+
+// 7-segment representation for digits 0-9
+byte digits[10][7] = {
+  {1, 1, 1, 1, 1, 1, 0}, // 0
+  {0, 1, 1, 0, 0, 0, 0}, // 1
+  {1, 1, 0, 1, 1, 0, 1}, // 2
+  {1, 1, 1, 1, 0, 0, 1}, // 3
+  {0, 1, 1, 0, 0, 1, 1}, // 4
+  {1, 0, 1, 1, 0, 1, 1}, // 5
+  {1, 0, 1, 1, 1, 1, 1}, // 6
+  {1, 1, 1, 0, 0, 0, 0}, // 7
+  {1, 1, 1, 1, 1, 1, 1}, // 8
+  {1, 1, 1, 1, 0, 1, 1}  // 9
+};
+
+// ========= CONFIGURATION ==========
+
+#define start_button 39
+#define NUM_PEERS 8
+int GameID = 102;
+int Maxplayers = 8;
+int gametime = 30;
+int players = 8;
+bool start = false;
+
+int Score1, Score2, Score3, Score4, Score5, Score6, Score7, Score8;
+uint8_t peerAddresses[NUM_PEERS][6] = {
+ // {0xF8, 0xB3, 0xB7, 0xC6, 0x32, 0xac},  //1
+  {0xF8, 0xB3, 0xB7, 0xC6, 0x2f, 0x4c},  //1
+  {0xF8, 0xB3, 0xB7, 0xC6, 0x2f, 0x68},  //2
+  {0xF8, 0xB3, 0xB7, 0xC6, 0x2f, 0xf4},  //3
+  {0xf8, 0xb3, 0xb7, 0xc6, 0x33, 0x04},  //4
+  {0xf8, 0xb3, 0xb7, 0xc6, 0x32, 0xfc},  //5
+  {0xf8, 0xb3, 0xb7, 0xc6, 0x33, 0x20},  //6
+  {0xf8, 0xb3, 0xb7, 0xc6, 0xcb, 0x88},  //7
+  {0xf8, 0xb3, 0xb7, 0xc6, 0x2f, 0x8c}   //8
+};
+
+
+typedef struct struct_message {
+  int id;
+  int gameStatus;
+  int score;
+  int time;
+} struct_message;
+
+bool peerStatus[NUM_PEERS];  // true = connected, false = not responding
+
+void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
+  char macStr[18];
+  snprintf(macStr, sizeof(macStr), "%02X:%02X:%02X:%02X:%02X:%02X",
+           mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5]);
+
+  if (status == ESP_NOW_SEND_SUCCESS) {
+    Serial.printf("✅ Delivery success to %s\n", macStr);
+    // mark this peer as connected
+    for (int i = 0; i < NUM_PEERS; i++) {
+      if (memcmp(mac_addr, peerAddresses[i], 6) == 0) {
+        peerStatus[i] = true;
+        break;
+      }
+    }
+  } else {
+    Serial.printf("❌ Delivery fail to %s\n", macStr);
+    // mark this peer as disconnected
+    for (int i = 0; i < NUM_PEERS; i++) {
+      if (memcmp(mac_addr, peerAddresses[i], 6) == 0) {
+        peerStatus[i] = false;
+        break;
+      }
+    }
+  }
+}
+
+
+void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len) {
+  struct_message receivedData;
+  memcpy(&receivedData, incomingData, sizeof(receivedData));
+
+  Serial.printf("Received from MAC: %02X:%02X:%02X:%02X:%02X:%02X\n",
+                mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+  Serial.printf("ID: %d, Status: %d, Score: %d, Time: %d\n",
+                receivedData.id, receivedData.gameStatus,
+                receivedData.score, receivedData.time);
+  sendDataToUART(receivedData.id, receivedData.gameStatus, receivedData.score, 5);
+  if (receivedData.id == 1)Score1 = receivedData.score;
+  if (receivedData.id == 2)Score2 = receivedData.score;
+  if (receivedData.id == 3)Score3 = receivedData.score;
+  if (receivedData.id == 4)Score4 = receivedData.score;
+  if (receivedData.id == 5)Score5 = receivedData.score;
+  if (receivedData.id == 6)Score6 = receivedData.score;
+  if (receivedData.id == 7)Score7 = receivedData.score;
+  if (receivedData.id == 8)Score8 = receivedData.score;
+
+}
+// Use UART2 for receiving
+HardwareSerial MySerial(2);
+
+
+void setup() {
+  Serial.begin(115200);
+  FastLED.addLeds<WS2812B, 13, GRB>(leds_score, NUM_LEDS_score);
+  FastLED.setBrightness(255);
+  pinMode(start_button, INPUT_PULLUP);
+  MySerial.begin(9600, SERIAL_8N1, 16, 17);  // Baud, config, RX, TX
+  Serial.println("UART Receiver ready on pins 16 (RX) and 17 (TX)");
+  WiFi.mode(WIFI_STA);
+  esp_now_register_send_cb(OnDataSent);
+
+
+  if (esp_now_init() != ESP_OK) {
+    Serial.println("ESP-NOW init failed");
+    ESP.restart();
+  }
+
+  esp_now_register_recv_cb(OnDataRecv);
+
+  for (int i = 0; i < NUM_PEERS; i++) {
+    esp_now_peer_info_t peerInfo = {};
+    memcpy(peerInfo.peer_addr, peerAddresses[i], 6);
+    peerInfo.channel = 0;
+    peerInfo.encrypt = false;
+    peerInfo.ifidx = WIFI_IF_STA;
+
+    if (esp_now_add_peer(&peerInfo) != ESP_OK) {
+      Serial.printf("❌ Failed to add peer %02X:%02X:%02X:%02X:%02X:%02X\n",
+                    peerAddresses[i][0], peerAddresses[i][1], peerAddresses[i][2],
+                    peerAddresses[i][3], peerAddresses[i][4], peerAddresses[i][5]);
+    } else {
+      Serial.printf("✅ Added peer %02X:%02X:%02X:%02X:%02X:%02X\n",
+                    peerAddresses[i][0], peerAddresses[i][1], peerAddresses[i][2],
+                    peerAddresses[i][3], peerAddresses[i][4], peerAddresses[i][5]);
+    }
+  }
+  for (int i = 0; i < NUM_PEERS; i++) {
+    Serial.printf("Peer %d (%02X:%02X:%02X:%02X:%02X:%02X) is %s\n", i + 1,
+                  peerAddresses[i][0], peerAddresses[i][1], peerAddresses[i][2],
+                  peerAddresses[i][3], peerAddresses[i][4], peerAddresses[i][5],
+                  peerStatus[i] ? "CONNECTED" : "NOT CONNECTED");
+  }
+
+}
+
+void sendDataToUART(int id, int status, int score, int time) {
+  String data = "{";
+  data += "\"id\":" + String(id) + ",";
+  data += "\"status\":\"" + String(status) + "\",";
+  data += "\"score\":" + String(score) + ",";
+  data += "\"time\":" + String(time);
+  data += "}";
+
+  MySerial.println(data);                   // Send via UART
+  Serial.println("Sent over UART: " + data); // Debug print
+}
+
+void sendGameData(int fixedId, int status, int currentScore, int currentTime) {
+  struct_message gameData = {fixedId, status, currentScore, currentTime};
+
+  for (int i = 0; i < NUM_PEERS; i++) {
+    esp_err_t result = esp_now_send(peerAddresses[i], (uint8_t *)&gameData, sizeof(gameData));
+    if (result == ESP_OK) {
+      Serial.printf("✅ Send success to %02X:%02X:%02X:%02X:%02X:%02X\n",
+                    peerAddresses[i][0], peerAddresses[i][1], peerAddresses[i][2],
+                    peerAddresses[i][3], peerAddresses[i][4], peerAddresses[i][5]);
+    } else {
+      Serial.printf("❌ Send error to %02X:%02X:%02X:%02X:%02X:%02X, code: %d\n",
+                    peerAddresses[i][0], peerAddresses[i][1], peerAddresses[i][2],
+                    peerAddresses[i][3], peerAddresses[i][4], peerAddresses[i][5], result);
+    }
+  }
+}
+
+void sendGameDataToPeer(int peerIndex, int fixedId, int status, int currentScore, int currentTime) {
+  if (peerIndex < 0 || peerIndex >= NUM_PEERS) {
+    Serial.println("❌ Invalid peer index");
+    return;
+  }
+
+  struct_message gameData = {fixedId, status, currentScore, currentTime};
+
+  esp_err_t result = esp_now_send(peerAddresses[peerIndex], (uint8_t *)&gameData, sizeof(gameData));
+  if (result == ESP_OK) {
+    Serial.printf("✅ Sent to peer[%d] %02X:%02X:%02X:%02X:%02X:%02X\n",
+                  peerIndex + 1,
+                  peerAddresses[peerIndex][0], peerAddresses[peerIndex][1],
+                  peerAddresses[peerIndex][2], peerAddresses[peerIndex][3],
+                  peerAddresses[peerIndex][4], peerAddresses[peerIndex][5]);
+  } else {
+    Serial.printf("❌ Send error to peer[%d], code: %d\n", peerIndex + 1, result);
+  }
+}
+
+
+void loop() {
+
+  if (digitalRead(start_button) == 0) {
+    Serial.println("startbutton pressed ");
+    start = true;
+    for (int i = 1; i <= players; i++) {
+      int peerIndex = i - 1;  // because array starts from 0
+      sendGameDataToPeer(peerIndex, i, 100, 0, gametime);
+      sendDataToUART(i, 100, 0, gametime);
+      delay(50);
+    }
+    delay(500);
+  }
+
+  if (start) {
+    Display1stScore();
+    Display2ndScore();
+    Display3rdScore();
+    Display4thScore();
+    Display5thScore();
+    Display6thScore();
+    Display7thScore();
+    Display8thScore();
+
+    FastLED.show();
+  }
+  if (MySerial.available()) {
+    String data = MySerial.readStringUntil('\n');  // Read one line
+    data.trim();
+
+    Serial.println("Received: " + data);
+
+    // Parse players
+    int playersIndex = data.indexOf("\"players\":");
+    if (playersIndex != -1) {
+      int commaIndex = data.indexOf(",", playersIndex);
+      String playersStr = data.substring(playersIndex + 10, commaIndex);
+      players = playersStr.toInt();
+    }
+    int timerIndex = data.indexOf("\"timer\":");
+    if (timerIndex != -1) {
+      int commaIndex = data.indexOf(",", timerIndex);
+      String timersStr = data.substring(timerIndex + 8, commaIndex); // << fixed
+      timersStr.trim();
+      gametime = timersStr.toInt();
+      Serial.print("game time = ");
+      Serial.println(gametime);
+    }
+
+
+    // Parse start
+    int startIndex = data.indexOf("\"start\":");
+    if (startIndex != -1) {
+      String startStr = data.substring(startIndex + 8);
+      startStr.trim();
+      startStr.replace("}", "");  // remove closing brace if present
+      if (startStr == "true") {
+        start = true;
+      } else {
+        start = false;
+      }
+    }
+
+    // Print extracted values
+    Serial.print("Players = ");
+    Serial.println(players);
+    Serial.print("Start = ");
+    Serial.println(start ? "true" : "false");
+
+    if (start == false && players == 100) {
+
+      sendDataToUART(20, Maxplayers, GameID , gametime);
+      players = 0;
+
+    }
+
+    if (start == true) {
+      for (int i = 1; i <= players; i++) {
+        int peerIndex = i - 1;  // because array starts from 0
+        sendGameDataToPeer(peerIndex, i, 100, 0, gametime);
+        sendDataToUART(i, 100, 0, gametime);
+        delay(50);
+      }
+
+    }
+    if (start == false && players >= 1 && players < 9) {
+      for (int i = 1; i <= players; i++) {
+        int peerIndex = i - 1;  // because array starts from 0
+        sendGameDataToPeer(peerIndex, i, 200, 0, gametime);
+       // sendDataToUART(i, 200, 0, gametime);
+        delay(50);
+      }
+    }
+  }
+}
+
+
+//-----------------------------------------xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx-------------------
+
+void Display1stScore() {
+  for (int i = 0; i < 21; i++) leds_score[i] = CRGB::Black;
+
+  int cursor;
+  int Fd = (Score1 < 10) ? 1 : (Score1 < 100) ? 2 : 3;
+
+  for (int i = 1; i <= Fd; i++) {
+    int digit = 0;
+    if (i == 1) {
+      cursor = 14;
+      digit = Score1 % 10;
+    }
+    else if (i == 2) {
+      cursor = 7;
+      digit = (Score1 / 10 % 10);
+    }
+    else {
+      cursor = 0;
+      digit = (Score1 / 100 % 10);
+    }
+
+    for (int k = 0; k <= 6; k++) {
+      leds_score[cursor] = digits[digit][k] ? CRGB::Fuchsia : CRGB::Black;
+      cursor++;
+    }
+  }
+}
+
+// Display 2: LEDs 21-41
+void Display2ndScore() {
+  for (int i = 21; i <= 41; i++) leds_score[i] = CRGB::Black;
+
+  int cursor;
+  int Fd = (Score2 < 10) ? 1 : (Score2 < 100) ? 2 : 3;
+
+  for (int i = 1; i <= Fd; i++) {
+    int digit = 0;
+    if (i == 1) {
+      cursor = 35;
+      digit = Score2 % 10;
+    }
+    else if (i == 2) {
+      cursor = 28;
+      digit = (Score2 / 10 % 10);
+    }
+    else {
+      cursor = 21;
+      digit = (Score2 / 100 % 10);
+    }
+
+    for (int k = 0; k <= 6; k++) {
+      leds_score[cursor] = digits[digit][k] ? CRGB::Red : CRGB::Black;
+      cursor++;
+    }
+  }
+}
+
+// Display 3: LEDs 42-62
+void Display3rdScore() {
+  for (int i = 42; i <= 62; i++) leds_score[i] = CRGB::Black;
+
+  int cursor;
+  int Fd = (Score3 < 10) ? 1 : (Score3 < 100) ? 2 : 3;
+
+  for (int i = 1; i <= Fd; i++) {
+    int digit = 0;
+    if (i == 1) {
+      cursor = 56;
+      digit = Score3 % 10;
+    }
+    else if (i == 2) {
+      cursor = 49;
+      digit = (Score3 / 10 % 10);
+    }
+    else {
+      cursor = 42;
+      digit = (Score3 / 100 % 10);
+    }
+
+    for (int k = 0; k <= 6; k++) {
+      leds_score[cursor] = digits[digit][k] ? CRGB::Blue : CRGB::Black;
+      cursor++;
+    }
+  }
+}
+
+// Display 4: LEDs 63-83
+void Display4thScore() {
+  for (int i = 63; i <= 83; i++) leds_score[i] = CRGB::Black;
+
+  int cursor;
+  int Fd = (Score4 < 10) ? 1 : (Score4 < 100) ? 2 : 3;
+
+  for (int i = 1; i <= Fd; i++) {
+    int digit = 0;
+    if (i == 1) {
+      cursor = 77;
+      digit = Score4 % 10;
+    }
+    else if (i == 2) {
+      cursor = 70;
+      digit = (Score4 / 10 % 10);
+    }
+    else {
+      cursor = 63;
+      digit = (Score4 / 100 % 10);
+    }
+
+    for (int k = 0; k <= 6; k++) {
+      leds_score[cursor] = digits[digit][k] ? CRGB::Green : CRGB::Black;
+      cursor++;
+    }
+  }
+}
+
+// Display 5: LEDs 84-104
+void Display5thScore() {
+  for (int i = 84; i <= 104; i++) leds_score[i] = CRGB::Black;
+
+  int cursor;
+  int Fd = (Score5 < 10) ? 1 : (Score5 < 100) ? 2 : 3;
+
+  for (int i = 1; i <= Fd; i++) {
+    int digit = 0;
+    if (i == 1) {
+      cursor = 98;
+      digit = Score5 % 10;
+    }
+    else if (i == 2) {
+      cursor = 91;
+      digit = (Score5 / 10 % 10);
+    }
+    else {
+      cursor = 84;
+      digit = (Score5 / 100 % 10);
+    }
+
+    for (int k = 0; k <= 6; k++) {
+      leds_score[cursor] = digits[digit][k] ? CRGB::Yellow : CRGB::Black;
+      cursor++;
+    }
+  }
+}
+
+// Display 6: LEDs 105-125
+void Display6thScore() {
+  for (int i = 105; i <= 125; i++) leds_score[i] = CRGB::Black;
+
+  int cursor;
+  int Fd = (Score6 < 10) ? 1 : (Score6 < 100) ? 2 : 3;
+
+  for (int i = 1; i <= Fd; i++) {
+    int digit = 0;
+    if (i == 1) {
+      cursor = 119;
+      digit = Score6 % 10;
+    }
+    else if (i == 2) {
+      cursor = 112;
+      digit = (Score6 / 10 % 10);
+    }
+    else {
+      cursor = 105;
+      digit = (Score6 / 100 % 10);
+    }
+
+    for (int k = 0; k <= 6; k++) {
+      leds_score[cursor] = digits[digit][k] ? CRGB::Orange : CRGB::Black;
+      cursor++;
+    }
+  }
+}
+
+// Display 7: LEDs 126-146
+void Display7thScore() {
+  for (int i = 126; i <= 146; i++) leds_score[i] = CRGB::Black;
+
+  int cursor;
+  int Fd = (Score7 < 10) ? 1 : (Score7 < 100) ? 2 : 3;
+
+  for (int i = 1; i <= Fd; i++) {
+    int digit = 0;
+    if (i == 1) {
+      cursor = 140;
+      digit = Score7 % 10;
+    }
+    else if (i == 2) {
+      cursor = 133;
+      digit = (Score7 / 10 % 10);
+    }
+    else {
+      cursor = 126;
+      digit = (Score7 / 100 % 10);
+    }
+
+    for (int k = 0; k <= 6; k++) {
+      leds_score[cursor] = digits[digit][k] ? CRGB::Cyan : CRGB::Black;
+      cursor++;
+    }
+  }
+}
+
+// Display 8: LEDs 147-167
+void Display8thScore() {
+  for (int i = 147; i <= 167; i++) leds_score[i] = CRGB::Black;
+
+  int cursor;
+  int Fd = (Score8 < 10) ? 1 : (Score8 < 100) ? 2 : 3;
+
+  for (int i = 1; i <= Fd; i++) {
+    int digit = 0;
+    if (i == 1) {
+      cursor = 161;
+      digit = Score8 % 10;
+    }
+    else if (i == 2) {
+      cursor = 154;
+      digit = (Score8 / 10 % 10);
+    }
+    else {
+      cursor = 147;
+      digit = (Score8 / 100 % 10);
+    }
+
+    for (int k = 0; k <= 6; k++) {
+      leds_score[cursor] = digits[digit][k] ? CRGB::White : CRGB::Black;
+      cursor++;
+    }
+  }
+}

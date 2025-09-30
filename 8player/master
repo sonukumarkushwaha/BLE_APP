@@ -2,9 +2,20 @@
 #include <WiFi.h>
 #include <esp_now.h>
 #include <FastLED.h>
+#include <SoftwareSerial.h>
+#include <DFRobotDFPlayerMini.h>
+SoftwareSerial mySerial2(33, 32); // RX, TX for second DFPlayer Mini
+DFRobotDFPlayerMini myDFPlayer2;
 
-#define NUM_LEDS_score 105  // Total number of LEDs for five displays (21 LEDs each)
+
+#define NUM_LEDS_score 168  // Total number of LEDs for five displays (21 LEDs each)
+#define NUM_LEDS_timer 21
 CRGB leds_score[NUM_LEDS_score];  // Define LEDs strip for all displays
+
+int timer;
+CRGB ledssec[NUM_LEDS_timer];          // Define LEDs strip
+
+unsigned long previousMillis = 0;   // store last update time
 
 // 7-segment representation for digits 0-9
 byte digits[10][7] = {
@@ -26,13 +37,13 @@ byte digits[10][7] = {
 #define NUM_PEERS 8
 int GameID = 102;
 int Maxplayers = 8;
-int gametime = 30;
+int gametime = 60;
 int players = 8;
 bool start = false;
 
 int Score1, Score2, Score3, Score4, Score5, Score6, Score7, Score8;
 uint8_t peerAddresses[NUM_PEERS][6] = {
- // {0xF8, 0xB3, 0xB7, 0xC6, 0x32, 0xac},  //1
+  // {0xF8, 0xB3, 0xB7, 0xC6, 0x32, 0xac},  //1
   {0xF8, 0xB3, 0xB7, 0xC6, 0x2f, 0x4c},  //1
   {0xF8, 0xB3, 0xB7, 0xC6, 0x2f, 0x68},  //2
   {0xF8, 0xB3, 0xB7, 0xC6, 0x2f, 0xf4},  //3
@@ -107,8 +118,14 @@ HardwareSerial MySerial(2);
 void setup() {
   Serial.begin(115200);
   FastLED.addLeds<WS2812B, 13, GRB>(leds_score, NUM_LEDS_score);
+  FastLED.addLeds<WS2812B, 23, GRB>(ledssec, NUM_LEDS_timer);
   FastLED.setBrightness(255);
   pinMode(start_button, INPUT_PULLUP);
+  mySerial2.begin(9600);
+  myDFPlayer2.begin(mySerial2);
+  Serial.println("Second DFPlayer Mini online.");
+  myDFPlayer2.volume(35); // Set initial volume (0-30)
+  Serial.println("Set volume of second DFPlayer Mini to 15");
   MySerial.begin(9600, SERIAL_8N1, 16, 17);  // Baud, config, RX, TX
   Serial.println("UART Receiver ready on pins 16 (RX) and 17 (TX)");
   WiFi.mode(WIFI_STA);
@@ -145,7 +162,8 @@ void setup() {
                   peerAddresses[i][3], peerAddresses[i][4], peerAddresses[i][5],
                   peerStatus[i] ? "CONNECTED" : "NOT CONNECTED");
   }
-
+  myDFPlayer2.loop(1);
+  delay(1000);
 }
 
 void sendDataToUART(int id, int status, int score, int time) {
@@ -197,33 +215,66 @@ void sendGameDataToPeer(int peerIndex, int fixedId, int status, int currentScore
   }
 }
 
+int getHighestScorer(int &highestScore) {
+  int player = 1;
+  highestScore = Score1;
+
+  if (Score2 > highestScore) {
+    highestScore = Score2;
+    player = 2;
+  }
+  if (Score3 > highestScore) {
+    highestScore = Score3;
+    player = 3;
+  }
+  if (Score4 > highestScore) {
+    highestScore = Score4;
+    player = 4;
+  }
+  if (Score5 > highestScore) {
+    highestScore = Score5;
+    player = 5;
+  }
+  if (Score6 > highestScore) {
+    highestScore = Score6;
+    player = 6;
+  }
+  if (Score7 > highestScore) {
+    highestScore = Score7;
+    player = 7;
+  }
+  if (Score8 > highestScore) {
+    highestScore = Score8;
+    player = 8;
+  }
+
+  return player;  // player number with highest score
+}
 
 void loop() {
 
   if (digitalRead(start_button) == 0) {
+    Score1 = Score2 = Score3 = Score4 = Score5 = Score6 = Score7 = Score8 = 0;
     Serial.println("startbutton pressed ");
+    gametime = 60;
+    myDFPlayer2.playMp3Folder(12);
+          for (int j = 1; j <= Maxplayers; j++) {
+        int peerIndex = j - 1;  // because array starts from 0
+        sendGameDataToPeer(peerIndex, j, 300, 0, gametime); //300 for hold
+        delay(10);
+      }
+    delay(5000);
     start = true;
     for (int i = 1; i <= players; i++) {
       int peerIndex = i - 1;  // because array starts from 0
       sendGameDataToPeer(peerIndex, i, 100, 0, gametime);
       sendDataToUART(i, 100, 0, gametime);
-      delay(50);
+      delay(10);
     }
-    delay(500);
+    
   }
 
-  if (start) {
-    Display1stScore();
-    Display2ndScore();
-    Display3rdScore();
-    Display4thScore();
-    Display5thScore();
-    Display6thScore();
-    Display7thScore();
-    Display8thScore();
 
-    FastLED.show();
-  }
   if (MySerial.available()) {
     String data = MySerial.readStringUntil('\n');  // Read one line
     data.trim();
@@ -256,6 +307,8 @@ void loop() {
       startStr.replace("}", "");  // remove closing brace if present
       if (startStr == "true") {
         start = true;
+
+      
       } else {
         start = false;
       }
@@ -275,26 +328,100 @@ void loop() {
     }
 
     if (start == true) {
+      Score1 = Score2 = Score3 = Score4 = Score5 = Score6 = Score7 = Score8 = 0;
+      myDFPlayer2.playMp3Folder(12);
+            for (int j = 1; j <= Maxplayers; j++) {
+        int peerIndex = j - 1;  // because array starts from 0
+        sendGameDataToPeer(peerIndex, j, 300, 0, 10);
+        delay(10);
+      }
+      delay(6000);
+
+      
       for (int i = 1; i <= players; i++) {
         int peerIndex = i - 1;  // because array starts from 0
         sendGameDataToPeer(peerIndex, i, 100, 0, gametime);
         sendDataToUART(i, 100, 0, gametime);
-        delay(50);
+        delay(10);
+      }
+      for (int j = players+1; j <= Maxplayers; j++) {
+        int peerIndex = j - 1;  // because array starts from 0
+        sendGameDataToPeer(peerIndex, j, 300, 0, gametime); //300 for hold
+        delay(10);
       }
 
+    }
+    if (start == false && players==0) {
+      // time saved
+      Serial.println("time saved");
+      Serial.println(gametime);
     }
     if (start == false && players >= 1 && players < 9) {
-      for (int i = 1; i <= players; i++) {
+      for (int i = 1; i <= Maxplayers; i++) {
         int peerIndex = i - 1;  // because array starts from 0
         sendGameDataToPeer(peerIndex, i, 200, 0, gametime);
-       // sendDataToUART(i, 200, 0, gametime);
-        delay(50);
+         sendDataToUART(1, 200, Score1, gametime);
+        
+        delay(10);
       }
+      myDFPlayer2.playMp3Folder(5);
+        delay(5000);
+        myDFPlayer2.loop(1);
     }
   }
+  if (start) {
+
+
+    unsigned long currentMillis = millis();
+    if (currentMillis - previousMillis >= 1000) {
+      previousMillis = currentMillis;
+      gametime--;
+
+      Serial.print("Time left: ");
+      Serial.println(gametime);
+      timer = gametime;
+      Displaytimerr();
+      FastLED.show();
+      if (gametime < 1) {
+        myDFPlayer2.playMp3Folder(5);
+        int topScore = 0;
+        int winner = getHighestScorer(topScore);
+        for (int i = 1; i <= Maxplayers; i++) {
+          int peerIndex = i - 1;  // because array starts from 0
+          if (winner - 1 == peerIndex) {
+            sendGameDataToPeer(peerIndex, i, 400, 0, 10);
+          }
+          else {
+            sendGameDataToPeer(peerIndex,i , 300, 0, 3);
+          }
+          delay(50);
+        }
+        sendDataToUART(1, 200, Score1, gametime);
+        Serial.print(" Player ");
+        Serial.print(winner);
+        delay(5000);
+        myDFPlayer2.loop(1);
+        start = false;
+      }
+    }
+    Display1stScore();
+    Display2ndScore();
+    Display3rdScore();
+    Display4thScore();
+    Display5thScore();
+    Display6thScore();
+    Display7thScore();
+    Display8thScore();
+    //Serial.println(val);
+    //    timer = gametime;
+    //    Displaytimerr();
+    FastLED.show();
+    // delay(100);
+
+  }
+
+
 }
-
-
 //-----------------------------------------xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx-------------------
 
 void Display1stScore() {
@@ -524,6 +651,24 @@ void Display8thScore() {
     for (int k = 0; k <= 6; k++) {
       leds_score[cursor] = digits[digit][k] ? CRGB::White : CRGB::Black;
       cursor++;
+    }
+  }
+}
+void Displaytimerr() {
+  fill_solid(ledssec, NUM_LEDS_timer, CRGB::Black);
+
+  int digitsToDisplay[3] = { (timer / 100) % 10, (timer / 10) % 10, timer % 10 };
+  int startPositions[3] = { 0, 7, 14 };
+  CRGB colors[3] = { CRGB::Green, CRGB::Fuchsia, CRGB::Red };
+
+  int numDigits = (timer < 10) ? 1 : (timer < 100 ? 2 : 3);
+
+  for (int i = 0; i < numDigits; i++) {
+    int cursor = startPositions[3 - numDigits + i];
+    int digit = digitsToDisplay[3 - numDigits + i];
+
+    for (int k = 0; k < 7; k++) {
+      ledssec[cursor++] = digits[digit][k] ? colors[3 - numDigits + i] : CRGB::Black;
     }
   }
 }

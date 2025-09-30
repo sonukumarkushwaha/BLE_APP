@@ -14,6 +14,7 @@ PCF8574 pcf8574_IN1(0x20);
 
 TaskHandle_t timersTaskHandle = NULL;
 bool gameRunning = false;
+bool onhold1 = false;
 unsigned long gameStartTime;
 unsigned long currentTime1 = 0;
 unsigned long vallue = 0;
@@ -69,15 +70,36 @@ void onGameMessage(struct_message data) {
   if (data.gameStatus == 200) {
     Serial.println(" Remote GAME OVER received → Stopping game!");
     gameRunning = false;
-    timer=0;
-     vTaskSuspend(timersTaskHandle);
+    onhold1 = false;
+    timer = 0;
+    vTaskSuspend(timersTaskHandle);
 
     // ✅ send final score
     sendGameData(device, 200, Score1, 0);
 
-   
+
+  }
+  if (data.gameStatus == 300) {
+    gameRunning = false;
+    vTaskResume(timersTaskHandle);
+    timer = data.time;   // use sender’s timer
+    for (int i = 0; i < 8; i++) pcf8574_ONE.digitalWrite(i, HIGH);
+    onhold1 = true;
+    //data.gameStatus = 0;
+
+  }
+  if (data.gameStatus == 400) {
+    gameRunning = false;
+    for (int j = 0; j < 10; j++) {
+      for (int i = 0; i < 8; i++) pcf8574_ONE.digitalWrite(i, LOW);
+      delay(200);
+      for (int i = 0; i < 8; i++) pcf8574_ONE.digitalWrite(i, HIGH);
+      delay(200);
+    }
   }
 }
+
+
 
 // ---------------- Setup ----------------
 void setup() {
@@ -117,13 +139,15 @@ void setup() {
 // ---------------- Startup Animation & Start ----------------
 void startup() {
   while (!gameRunning) {
+
+    if(!onhold1){
     // simple LED chase animation
     for (int i = 0; i < 8; i++) {
       pcf8574_ONE.digitalWrite(i, LOW);
       delay(30);
       pcf8574_ONE.digitalWrite(i, HIGH);
     }
-
+    }
     // check button
     if (digitalRead(BUTTON_PIN) == LOW) {
       // buzz to confirm
@@ -167,6 +191,7 @@ void timers() {
     vallue = currentTime1;
 
     if (timer < 1) {
+      onhold1 = false;
       vTaskSuspend(timersTaskHandle);
     }
   }
@@ -182,6 +207,7 @@ void loop() {
 
     while (millis() - lightStart < Speed) {
       int in1 = pcf8574_IN1.digitalRead(randomno);
+
 
       delay(20);
       if (in1 == LOW) {
@@ -217,8 +243,8 @@ void loop() {
       return;
     }
   }
-  else{
-     startup();
+  else {
+    startup();
   }
 
 }

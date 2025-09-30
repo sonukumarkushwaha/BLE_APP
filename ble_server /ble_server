@@ -11,6 +11,7 @@ void handleStatus(String gameId);
 void handleTrigger(String command);
 void handletimer(String timing);
 int filterdata(String incoming_data);
+
 void sendDataToUART(int players, bool start, int gametime);
 void sendBLE(String msg);
 void uartreceive();
@@ -38,6 +39,7 @@ int triggertime = 0;
 String userID;
 String gameID;
 String ticketID;
+
 
 String gamestat = "end";
 int recivedscore1 = 0;
@@ -236,7 +238,7 @@ void handletimer(String timing) {
     recivedtime = triggertime;
     Serial.print("timersaved=");
     Serial.println(recivedtime);
-    sendDataToUART(counting, false, recivedtime);
+    sendDataToUART(0, false, recivedtime);
   }
   sendBLE("ok");
 }
@@ -328,7 +330,7 @@ void setup() {
   createLogFile();
   MySerial.begin(9600, SERIAL_8N1, 16, 17);
   Serial.println("UART2 started on pins 16(RX),17(TX)");
-  BLEDevice::init("Funtoo_2playerbatak");
+  BLEDevice::init("Funtoo_8player");
   BLEServer *pServer = BLEDevice::createServer();
   pServer->setCallbacks(new MyServerCallbacks());
 

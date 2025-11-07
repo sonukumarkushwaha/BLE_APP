@@ -39,7 +39,15 @@ int triggertime = 0;
 String userID;
 String gameID;
 String ticketID;
+String command;
+int startplayer =0;
 
+
+int max_players = 2;
+int GameID = 101;
+int default_time = 60;
+String difficulty = "hard";
+String gameMode = "individual";
 
 String gamestat = "end";
 int recivedscore1 = 0;
@@ -125,8 +133,8 @@ void handleVerify(String ticket) {
   Serial.println("Verify Request for Ticket: " + ticket);
 
   filterdata(ticket);
-//  Serial.print("verifyind = ");
-//  Serial.println(ticketID.toInt());
+  //  Serial.print("verifyind = ");
+  //  Serial.println(ticketID.toInt());
   // Simulated check (replace with your DB logic)
   findDataByTicketId(ticketID.toInt());
 
@@ -140,39 +148,59 @@ void handleVerify(String ticket) {
 
 // Submit multiple QR entries
 void handleSubmit(String qrDataAll) {
-  Serial.println("Submit Request: " + qrDataAll);
 
-  int startIndex = 0;
-  int endIndex = qrDataAll.indexOf(',');
-  counting = 0;
+  int underscoreIndex = qrDataAll.indexOf('_');   // Find underscore position
 
-  while (endIndex != -1) {
-    String qrData = qrDataAll.substring(startIndex, endIndex);
+  if (underscoreIndex != -1) {
+     command = qrDataAll.substring(0, underscoreIndex);        // "start"
+    String reciveplayer = qrDataAll.substring(underscoreIndex + 1); // "1"
+     startplayer = reciveplayer.toInt();                          // Convert to integer
+
+    Serial.println("Word: " + command);
+    Serial.print("Number: ");
+    Serial.println(startplayer);
+  } else {
+    Serial.println("QR format");
+  }
+  if (command == "start") {
+    sendDataToUART(startplayer, true, recivedtime);
+    sendBLE("ok");
+  }
+  else {
+    Serial.println("Submit Request: " + qrDataAll);
+
+    int startIndex = 0;
+    int endIndex = qrDataAll.indexOf(',');
+    counting = 0;
+
+    while (endIndex != -1) {
+      String qrData = qrDataAll.substring(startIndex, endIndex);
+      qrData.trim();
+      Serial.println("Processing QR: " + qrData);
+
+      startIndex = endIndex + 1;
+      endIndex = qrDataAll.indexOf(',', startIndex);
+      counting++;
+      filterdata(qrData);
+      saveData(userID, ticketID.toInt(), 0, gameID.toInt(), "men", "Qr_mode", 1, 0);
+    }
+
+    // Last entry
+    String qrData = qrDataAll.substring(startIndex);
     qrData.trim();
-    Serial.println("Processing QR: " + qrData);
+    if (qrData.length() > 0) {
+      Serial.println("Processing QR: " + qrData);
+      counting++;
 
-    startIndex = endIndex + 1;
-    endIndex = qrDataAll.indexOf(',', startIndex);
-    counting++;
-    filterdata(qrData);
-    saveData(userID, ticketID.toInt(), 0, gameID.toInt(), "men", "Qr_mode", 1, 0);
+      players = counting;
+      filterdata(qrData);
+      saveData(userID, ticketID.toInt(), 0, gameID.toInt(), "men", "Qr_mode", 1, 0);
+      sendDataToUART(counting, true, recivedtime);
+
+    }
+
+    sendBLE("ok");
   }
-
-  // Last entry
-  String qrData = qrDataAll.substring(startIndex);
-  qrData.trim();
-  if (qrData.length() > 0) {
-    Serial.println("Processing QR: " + qrData);
-    counting++;
-
-    players = counting;
-    filterdata(qrData);
-    saveData(userID, ticketID.toInt(), 0, gameID.toInt(), "men", "Qr_mode", 1, 0);
-    sendDataToUART(counting, true, recivedtime);
-
-  }
-
-  sendBLE("ok");
 }
 
 // Game status
@@ -183,27 +211,50 @@ int scoresAll[8] = {
 };
 
 void handleStatus(String gameId) {
-  Serial.println("Status Request for Game: " + gameId);
+  if (gameId == "default") {
 
-  String gameStatus = gamestat;
-  int gameTime = recivedtime;
+    //    int max_players = 2;
+    //int GameID = 101;
+    //int default_time = 60;
+    //String difficulty = "hard"
+    //String gameMode = "individual"
 
-  // ⚡ Build JSON dynamically based on "players"
-  String jsonResponse = "{";
-  jsonResponse += "\"game_status\":\"" + gameStatus + "\",";
-  jsonResponse += "\"game_time\":" + String(gameTime) + ",";
-  jsonResponse += "\"players\":" + String(players) + ",";
-  jsonResponse += "\"scores\":[";
+    Serial.println("Status Request default status: " + gameId);
+    String jsonResponse = "{";
+    jsonResponse += "\"max_players\":\"" + String(status) + "\",";
+    jsonResponse += "\"GameID\":\"" + String(score) + "\",";
+    jsonResponse += "\"default_time\":\"" + String(timeValue) + "\",";
+    jsonResponse += "\"difficulty\":\"" + difficulty + "\",";
+    jsonResponse += "\"gameMode\":\"" + gameMode + "\"";
+    jsonResponse += "}";
 
-  for (int i = 0; i < players; i++) {
-    jsonResponse += String(scoresAll[i]);
-    if (i < players - 1) jsonResponse += ",";
+    sendBLE(jsonResponse);
+
   }
+  else {
 
-  jsonResponse += "]";
-  jsonResponse += "}";
+    Serial.println("Status Request for Game: " + gameId);
 
-  sendBLE(jsonResponse);
+    String gameStatus = gamestat;
+    int gameTime = recivedtime;
+
+    // ⚡ Build JSON dynamically based on "players"
+    String jsonResponse = "{";
+    jsonResponse += "\"game_status\":\"" + gameStatus + "\",";
+    jsonResponse += "\"game_time\":" + String(gameTime) + ",";
+    jsonResponse += "\"players\":" + String(players) + ",";
+    jsonResponse += "\"scores\":[";
+
+    for (int i = 0; i < players; i++) {
+      jsonResponse += String(scoresAll[i]);
+      if (i < players - 1) jsonResponse += ",";
+    }
+
+    jsonResponse += "]";
+    jsonResponse += "}";
+
+    sendBLE(jsonResponse);
+  }
 }
 
 
@@ -317,7 +368,7 @@ void uartreceive() {
       jsonResponse += "\"default_time\":\"" + String(timeValue) + "\"";
       jsonResponse += "}";
 
-      sendBLE(jsonResponse);
+      // sendBLE(jsonResponse);
 
     }
 
@@ -332,7 +383,7 @@ void setup() {
   createLogFile();
   MySerial.begin(9600, SERIAL_8N1, 16, 17);
   Serial.println("UART2 started on pins 16(RX),17(TX)");
-  BLEDevice::init("Funtoo_batak");
+  BLEDevice::init("Funtoo_batak_12");
   BLEServer *pServer = BLEDevice::createServer();
   pServer->setCallbacks(new MyServerCallbacks());
 

@@ -340,12 +340,13 @@ void loop() {
       }
 
     }
+    }
     if (start == false && players == 0) {
       // time saved
       Serial.println("time saved");
       Serial.println(gametime);
     }
-    if (start == false && players >= 1 && players < 9) {
+    if (start == false && players > 0 && players < 9) {
       for (int i = 1; i <= Maxplayers; i++) {
         int peerIndex = i - 1;  // because array starts from 0
         sendGameDataToPeer(peerIndex, i, 200, 0, gametime);
@@ -357,7 +358,7 @@ void loop() {
       delay(5000);
       //myDFPlayer2.loop(1);
     }
-  }
+  
   if (start) {
 
 

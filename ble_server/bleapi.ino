@@ -159,11 +159,14 @@ void handleSubmit(String qrDataAll) {
     Serial.println("Word: " + command);
     Serial.print("Number: ");
     Serial.println(startplayer);
+    players = startplayer;
+    counting = startplayer;
   } else {
     Serial.println("QR format");
   }
   if (command == "start") {
     sendDataToUART(startplayer, true, recivedtime);
+    delay(100);
     sendBLE("ok");
   }
   else {
@@ -355,6 +358,16 @@ void uartreceive() {
       scoresAll[id - 1] = score;   // store the score in correct index
       if (status == 100) gamestat = "running";
       if (status == 200) gamestat = "end";
+      if (status == 400){
+        gamestat = "reached";
+            String jsonResponse = "{";
+      jsonResponse += "\"player\":\"" + String(id) + "\",";
+      jsonResponse += "\"Status\":\"" + gamestat + "\"";
+      jsonResponse += "}";
+
+       sendBLE(jsonResponse);
+       gamestat = "running";
+      }
     }
 
     if (id != 20) {
@@ -383,7 +396,7 @@ void setup() {
   createLogFile();
   MySerial.begin(9600, SERIAL_8N1, 16, 17);
   Serial.println("UART2 started on pins 16(RX),17(TX)");
-  BLEDevice::init("Funtoo_batak_12");
+  BLEDevice::init("Funtoo_frog_50");
   BLEServer *pServer = BLEDevice::createServer();
   pServer->setCallbacks(new MyServerCallbacks());
 
@@ -416,5 +429,4 @@ void setup() {
 // ================== LOOP ==================
 void loop() {
   uartreceive();
-
 }

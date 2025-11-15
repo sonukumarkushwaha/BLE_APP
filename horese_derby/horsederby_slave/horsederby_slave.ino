@@ -9,7 +9,7 @@
 
 #define solenoide 5
 
-const int deviceID = 5;   // constant ID
+const int deviceID = 3;   // constant ID
 int gameStatus = 200;
 void setup() {
   Serial.begin(115200);
@@ -22,28 +22,30 @@ void setup() {
   pinMode(out2, OUTPUT);
   pinMode(out3, OUTPUT);
   pinMode(solenoide, OUTPUT);
- 
+
   startup();
 }
 
 
 // Handle incoming game messages
 void onGameMessage(struct_message data) {
-  //recivedid= data.id;
+  int recivedid = data.id;
   //recivedscore = data.score;
   //recived status = data.gameStatus;
   //recived time = data.time;
-  gameStatus = data.gameStatus;
+  if (recivedid == deviceID) {
+    gameStatus = data.gameStatus;
+  }
 }
 
 void startup() {
   int i = 0;
   digitalWrite(solenoide, LOW);
   while (1) {
-    
-    
+
+
     i++;
-    Serial.println(i);
+    //  Serial.println(i);
     if (i == 1)digitalWrite(out1, HIGH);
     if (i == 2)digitalWrite(out2, HIGH);
     if (i == 3)digitalWrite(out3, HIGH);
@@ -52,10 +54,10 @@ void startup() {
     digitalWrite(out1, LOW);
     digitalWrite(out2, LOW);
     digitalWrite(out3, LOW);
-    if(gameStatus==100)break;
+    if (gameStatus == 100)break;
   }
   Serial.println("game started");
-  
+
   digitalWrite(out1, HIGH);
   digitalWrite(out2, HIGH);
   digitalWrite(out3, HIGH);
@@ -63,19 +65,19 @@ void startup() {
 }
 
 void loop() {
-if(gameStatus==200)startup();
+  if (gameStatus == 200)startup();
 
-if(digitalRead(ir1)==LOW){
+  if (digitalRead(ir1) == LOW) {
     sendGameData(deviceID, gameStatus, 1, 0);
     delay(50);
   }
-  if(digitalRead(ir2)==LOW){
+  if (digitalRead(ir2) == LOW) {
     sendGameData(deviceID, gameStatus, 2, 0);
     delay(50);
   }
-  if(digitalRead(ir3)==LOW){
+  if (digitalRead(ir3) == LOW) {
     sendGameData(deviceID, gameStatus, 3, 0);
     delay(50);
   }
-  
+
 }

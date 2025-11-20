@@ -26,6 +26,7 @@ bool deviceConnected = false;
 
 // ================== GAME VARIABLES ==================
 HardwareSerial MySerial(2);
+
 int recivedtime = 60;
 int counting = 0;
 int players = 1;
@@ -40,11 +41,11 @@ String userID;
 String gameID;
 String ticketID;
 String command;
-int startplayer =0;
+int startplayer = 0;
 
 
-int max_players = 2;
-int GameID = 101;
+int max_players = 4;
+int GameID = 54;
 int default_time = 60;
 String difficulty = "hard";
 String gameMode = "individual";
@@ -59,12 +60,17 @@ int recivedscore6 = 0;
 int recivedscore7 = 0;
 int recivedscore8 = 0;
 
+int scoresAll[8] = {
+  recivedscore1, recivedscore2, recivedscore3, recivedscore4,
+  recivedscore5, recivedscore6, recivedscore7, recivedscore8
+};
+  
 // ================== BLE SERVER CALLBACKS ==================
 class MyServerCallbacks: public BLEServerCallbacks {
     void onConnect(BLEServer* pServer) {
       deviceConnected = true;
       Serial.println("BLE Client Connected");
-      sendDataToUART(100, false, recivedtime);
+     // sendDataToUART(100, false, recivedtime);
 
     }
     void onDisconnect(BLEServer* pServer) {
@@ -152,15 +158,18 @@ void handleSubmit(String qrDataAll) {
   int underscoreIndex = qrDataAll.indexOf('_');   // Find underscore position
 
   if (underscoreIndex != -1) {
-     command = qrDataAll.substring(0, underscoreIndex);        // "start"
+    command = qrDataAll.substring(0, underscoreIndex);        // "start"
     String reciveplayer = qrDataAll.substring(underscoreIndex + 1); // "1"
-     startplayer = reciveplayer.toInt();                          // Convert to integer
+    startplayer = reciveplayer.toInt();                          // Convert to integer
 
     Serial.println("Word: " + command);
     Serial.print("Number: ");
     Serial.println(startplayer);
     players = startplayer;
     counting = startplayer;
+    for (int i = 0; i < players; i++) {
+      scoresAll[i] = 0;
+    }
   } else {
     Serial.println("QR format");
   }
@@ -208,10 +217,7 @@ void handleSubmit(String qrDataAll) {
 
 // Game status
 // Define scores for up to 8 players (global or local)
-int scoresAll[8] = {
-  recivedscore1, recivedscore2, recivedscore3, recivedscore4,
-  recivedscore5, recivedscore6, recivedscore7, recivedscore8
-};
+
 
 void handleStatus(String gameId) {
   if (gameId == "default") {
@@ -224,9 +230,9 @@ void handleStatus(String gameId) {
 
     Serial.println("Status Request default status: " + gameId);
     String jsonResponse = "{";
-    jsonResponse += "\"max_players\":\"" + String(status) + "\",";
-    jsonResponse += "\"GameID\":\"" + String(score) + "\",";
-    jsonResponse += "\"default_time\":\"" + String(timeValue) + "\",";
+    jsonResponse += "\"max_players\":\"" + String(max_players) + "\",";
+    jsonResponse += "\"GameID\":\"" + String(GameID) + "\",";
+    jsonResponse += "\"default_time\":\"" + String(default_time) + "\",";
     jsonResponse += "\"difficulty\":\"" + difficulty + "\",";
     jsonResponse += "\"gameMode\":\"" + gameMode + "\"";
     jsonResponse += "}";
@@ -275,6 +281,9 @@ void handleTrigger(String command) {
     Serial.println("Game START triggered!");
     gamestat = "running";
     sendDataToUART(counting, true, recivedtime);
+    for (int i = 0; i < players; i++) {
+      scoresAll[i] = 0;
+    }
   }
   sendBLE(command);
 }
@@ -358,15 +367,15 @@ void uartreceive() {
       scoresAll[id - 1] = score;   // store the score in correct index
       if (status == 100) gamestat = "running";
       if (status == 200) gamestat = "end";
-      if (status == 400){
+      if (status == 400) {
         gamestat = "reached";
-            String jsonResponse = "{";
-      jsonResponse += "\"player\":\"" + String(id) + "\",";
-      jsonResponse += "\"Status\":\"" + gamestat + "\"";
-      jsonResponse += "}";
+        String jsonResponse = "{";
+        jsonResponse += "\"player\":\"" + String(id) + "\",";
+        jsonResponse += "\"Status\":\"" + gamestat + "\"";
+        jsonResponse += "}";
 
-       sendBLE(jsonResponse);
-       gamestat = "running";
+        sendBLE(jsonResponse);
+        gamestat = "running";
       }
     }
 
@@ -396,7 +405,7 @@ void setup() {
   createLogFile();
   MySerial.begin(9600, SERIAL_8N1, 16, 17);
   Serial.println("UART2 started on pins 16(RX),17(TX)");
-  BLEDevice::init("Funtoo_frog_50");
+  BLEDevice::init("Funtoo_frog_54");
   BLEServer *pServer = BLEDevice::createServer();
   pServer->setCallbacks(new MyServerCallbacks());
 

@@ -1,0 +1,479 @@
+//#include <WiFi.h>
+#include "game_comm.h"
+#include <Wire.h>                   // Make sure to include this for I2C communication
+#include "Arduino.h"
+#include "PCF8574.h"
+#include <FastLED.h>
+//TaskHandle_t timersTaskHandle = NULL;
+
+
+#define LED_PIN  25
+#define NUM_LEDS 54  // 2 seven segment displays 
+
+#define SEGMENT_LENGTH 33            // Number of LEDs per segment
+#define NUM_LEDS_lights    SEGMENT_LENGTH *5         // Total number of LEDs (8 segments x 38 LEDs)
+
+#define BRIGHTNESS  255
+#define LED_TYPE    WS2812B
+#define COLOR_ORDER GRB
+
+#define BUTTON_PIN  36                // Pin connected to the button
+#define GAME_DURATION 70000           // Game duration in milliseconds (60 seconds
+char Fd1 = 0, Fd2 = 0;
+int Speed = 700;
+int Score2 = 0;
+int Score3 = 3;
+int timer = 60;
+int Score1 = 0;
+int prevledsegment = 0;
+int ledsegment = 0;
+byte digits[10][7] =  {{1, 1, 1, 1, 1, 1, 0}, // Digit 0
+  {0, 1, 1, 0, 0, 0, 0}, // Digit 1
+  {1, 1, 0, 1, 1, 0, 1}, // Digit 2
+  {1, 1, 1, 1, 0, 0, 1}, // Digit 3
+  {0, 1, 1, 0, 0, 1, 1}, // Digit 4
+  {1, 0, 1, 1, 0, 1, 1}, // Digit 5
+  {1, 0, 1, 1, 1, 1, 1}, // Digit 6
+  {1, 1, 1, 0, 0, 0, 0}, // Digit 7
+  {1, 1, 1, 1, 1, 1, 1}, // Digit 8
+  {1, 1, 1, 1, 0, 1, 1} // Digit 9
+};
+
+
+CRGB leds[NUM_LEDS];
+CRGB leds1[NUM_LEDS_lights];
+
+// Define colors for each segment
+CRGB colors[] = {
+  CRGB::Red,     // Segment 1: Red
+  CRGB::Green,   // Segment 2: Green
+  CRGB::Blue,    // Segment 3: Blue
+  CRGB::Yellow,  // Segment 4: Yellow
+  CRGB::Cyan,    // Segment 5: Cyan
+  CRGB::Magenta, // Segment 6: Magenta
+  CRGB::Orange,  // Segment 7: Orange
+  CRGB::Purple   // Segment 8: Purple
+};
+
+// Set i2c address
+PCF8574 pcf8574_ONE(0x3A);
+PCF8574 pcf8574_TWO(0x3E);
+PCF8574 pcf8574_IN1(0x38);
+bool gameRunning = false;
+unsigned long gameStartTime;
+unsigned long currentTime;
+unsigned long vallue = 0;
+unsigned long previousMilliss = 0;
+int randomno;
+int previousno;
+int randomno2;
+int previousno2;
+
+
+void onGameMessage(struct_message data) {
+  //recivedid= data.id;
+  //recivedscore = data.score;
+  Gpass = data.gameStatus;
+  //recived time = data.time;
+}
+
+void setup() {
+  Serial.begin(115200);
+  setupGameComm();
+//  xTaskCreatePinnedToCore(
+//    timersTask,     // Function to implement the task
+//    "Timers Task",  // Name of the task
+//    2048,           // Stack size in words
+//    NULL,           // Task input parameter
+//    1,              // Priority of the task (1 = low)
+//    &timersTaskHandle,
+//    0               // Core where the task should run (0 or 1)
+//  );
+//  vTaskSuspend(timersTaskHandle);
+  FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(leds1, NUM_LEDS_lights).setCorrection(TypicalLEDStrip);
+  FastLED.addLeds<WS2812B, 4, GRB>(leds, NUM_LEDS);
+  FastLED.setBrightness(BRIGHTNESS);
+  // Serial.begin(115200);
+  delay(1000);
+  //Serial.print("Init pcf8574_ONE...");
+  if (pcf8574_ONE.begin()) {
+    //Serial.println("OK");
+  } else {
+    //Serial.println("KO");
+  }
+  delay(500);
+  pinMode(BUTTON_PIN, INPUT);
+  //pinMode(25,OUTPUT);
+
+  for (int i = 0; i < 8; i++) {
+    pcf8574_ONE.pinMode(i, OUTPUT);
+  }
+  for (int i = 0; i < 8; i++) {
+    pcf8574_TWO.pinMode(i, OUTPUT);
+  }
+  for (int i = 0; i < 8; i++) {
+    pcf8574_IN1.pinMode(i, INPUT);
+  }
+  delay(200);
+  for (int i = 0; i < 8; i++) {
+    pcf8574_ONE.digitalWrite(i, HIGH); // Turn off the current pin
+  }
+
+  startup();
+}
+//void timersTask(void *parameter) {
+//  while (true) {
+//    timers();
+//    vTaskDelay(1000 / portTICK_PERIOD_MS);  // Call every 1 second
+//  }
+//}
+void startup() {
+Serial.println("on startup loop ");
+  while (1) {
+    
+    if (Gpass == 300) {
+      for (int i = 0; i < 8; i++) {
+        pcf8574_TWO.digitalWrite(i, HIGH); // Turn off the current pin
+      }
+      while(Gpass==300){
+        Serial.println("on hold trigger ");
+        delay(50);
+        }
+    }
+    //Serial.println("inside while loop");
+    //    for (int i = 0; i < SEGMENT_LENGTH; i++) {
+    //      leds1[i] = CRGB::Red;
+    //      leds1[i + SEGMENT_LENGTH] = CRGB::Red;
+    //      leds1[i + SEGMENT_LENGTH * 2] = CRGB::Red;
+    //      leds1[i + SEGMENT_LENGTH * 3] = CRGB::Red;
+    //      leds1[i + SEGMENT_LENGTH * 4] = CRGB::Red;
+    //      leds1[i - SEGMENT_LENGTH / 2] = CRGB::Blue;
+    //      leds1[i + (SEGMENT_LENGTH) - (SEGMENT_LENGTH / 2)] = CRGB::Blue;
+    //      leds1[i + (SEGMENT_LENGTH * 2) - (SEGMENT_LENGTH / 2)] = CRGB::Blue;
+    //      leds1[i + (SEGMENT_LENGTH * 3) - (SEGMENT_LENGTH / 2)] = CRGB::Blue;
+    //      leds1[i + (SEGMENT_LENGTH * 4) - (SEGMENT_LENGTH / 2)] = CRGB::Blue;
+    //      FastLED.show();
+    //      delay(10);
+    //    }
+    unsigned long currentMilliss = millis();
+
+    if (currentMilliss - previousMilliss >= 100) {
+      pcf8574_TWO.digitalWrite(prevledsegment, HIGH);
+      previousMilliss = currentMilliss;
+
+      pcf8574_TWO.digitalWrite(ledsegment, LOW);
+      prevledsegment = ledsegment; 
+      ledsegment++;
+      if(ledsegment>=5)ledsegment=0;
+    }
+
+    // delay(30);
+    if ((!gameRunning && digitalRead(BUTTON_PIN) == LOW) || (!gameRunning && Gpass == 100)) {
+      // Start the game
+      //vTaskResume(timersTaskHandle);
+      for (int i = 0; i < 5; i++) {
+        scores[i] = 0;
+      }
+      Gpass = 0 ;
+      gameRunning = true;
+      for (int i = 0; i < 5; i++) {
+        Serial.print("Score");
+        Serial.print(i + 1);
+        Serial.print(": ");
+        Serial.print(scores[i]);
+        Serial.print(" | Rank: ");
+        Serial.println(ranks[i]);
+      }
+      pcf8574_ONE.digitalWrite(7, LOW);
+      gameStartTime = millis();
+            for (int i = 0; i < 8; i++) {
+        pcf8574_TWO.digitalWrite(i, HIGH); // Turn off the current pin
+      }
+      Serial.println("Game Started!");
+      // digitalWrite(25,HIGH);
+      delay(200); // Debounce delay
+      for (int i = 0; i < NUM_LEDS_lights; i++) {
+        leds1[i] = CRGB::Black;
+      }
+      for (int i = 0; i < 27; i++) {
+        leds[i] = CRGB::Black;
+      }
+      FastLED.show();
+      delay(50);
+      Score1 = 0;
+      Display1stScore();
+      FastLED.show();
+
+      delay(50);
+      timer = 60;
+      Score2 = timer;
+      Display2ndScore();
+      FastLED.show();
+      delay(50);
+      //digitalWrite(25,LOW);
+      break;
+
+    }
+  }
+}
+
+void timers() {
+
+  currentTime = millis();
+
+  // int vallue = ((currentTime - startTime) / 1000);
+  if (currentTime - vallue >= 1000) {
+
+
+    //Serial.print(timer);
+    //Serial.println(" second");
+    if (timer < 10) {
+      for (int i = 27; i < 54; i++) {
+        leds[i] = CRGB::Black;
+      }
+
+      FastLED.show();
+
+    }
+    Score2 = timer;
+    Display2ndScore();
+    FastLED.show();
+
+    vallue = currentTime;
+    timer--;
+    if (timer == 50) {
+      Speed = 600;
+    }
+    if (timer == 40) {
+      Speed = 500;
+    }
+    if (timer == 30) {
+      Speed = 400;
+    }
+    if (timer == 10) {
+      Speed = 350;
+    }
+
+  }
+
+}
+
+
+void loop() {
+
+  if (gameRunning) {
+    unsigned long currentTime = millis();
+    unsigned long elapsedTime = currentTime - gameStartTime;
+
+    // Check if the game duration has been reached
+    if (Gpass == 200) {
+    //  vTaskSuspend(timersTaskHandle);
+      gameRunning = false;
+      Serial.println("Game Over!");
+      calculateRanks(scores, ranks, 5);
+
+      // Print scores and ranks
+      for (int i = 0; i < 5; i++) {
+        Serial.print("Score");
+        Serial.print(i + 1);
+        Serial.print(": ");
+        Serial.print(scores[i]);
+        Serial.print(" | Rank: ");
+        Serial.println(ranks[i]);
+      }
+      Serial.print("rank for ");
+      Serial.print(device);
+      Serial.print(" = ");
+      Serial.println(ranks[device - 1]);
+      delay(1000);
+      Score3 = ranks[device - 1];
+      Display3ndScore();
+      FastLED.show();
+  
+      if (ranks[device - 1] == 1) {
+        pcf8574_ONE.digitalWrite(7, HIGH);
+        pcf8574_ONE.digitalWrite(6, LOW);
+      }
+      else {
+        pcf8574_ONE.digitalWrite(7, HIGH);
+        pcf8574_ONE.digitalWrite(5, LOW);
+      }
+      // Optionally, add code to display the final score or reset the LEDs
+      for (int i = 0; i < NUM_LEDS_lights; i++) {
+        leds1[i] = CRGB::Black; // Turn off all LEDs
+      }
+      FastLED.show();
+      startup();
+      delay(50);
+    } else {
+
+      //game code zone
+      randomgenrate(0, 5);
+      randomgenrate2(0, 5);
+      pcf8574_ONE.digitalWrite(randomno, LOW); // Turn on the current pin
+      pcf8574_TWO.digitalWrite(randomno, LOW); // Turn on the current
+
+      // pcf8574_ONE.digitalWrite(randomno2, LOW);
+
+      //Serial.print("random =");
+      // Serial.println(randomno);
+      // Light up the current randomno with its designated color
+      for (int i = 0; i < SEGMENT_LENGTH; i++) {
+        int ledIndex = randomno * SEGMENT_LENGTH + i;
+        leds1[ledIndex] = CRGB::Red;
+      }
+      FastLED.show();
+      unsigned long startLightTime = millis();
+      delay(130);
+      while (millis() - startLightTime < Speed) {
+        //timers();
+        int in1 = pcf8574_IN1.digitalRead(randomno);
+        //              //Serial.print("random =");
+        //              //Serial.println(randomno);
+        delay(20);
+        if (in1 == LOW) {
+          for (int i = 0; i < SEGMENT_LENGTH; i++) {
+            int ledIndex = randomno * SEGMENT_LENGTH + i;
+            leds1[ledIndex] = CRGB::Green;
+          }
+          //digitalWrite(25,HIGH);
+          Score1++;
+          scores[device - 1] = Score1;
+          sendGameData(device, 100, Score1, 0);
+          Display1stScore();
+          FastLED.show();
+
+          //Serial.println(Score1);
+
+          break;
+        }
+      }
+      pcf8574_ONE.digitalWrite(randomno, HIGH); // Turn off the current pin
+      pcf8574_TWO.digitalWrite(randomno, HIGH);
+      // pcf8574_ONE.digitalWrite(randomno2, HIGH);
+      delay(50);
+      for (int i = 0; i < SEGMENT_LENGTH; i++) {
+        int ledIndex = randomno * SEGMENT_LENGTH + i;
+        leds1[ledIndex] = CRGB::Black;
+      }
+      FastLED.show();
+      //digitalWrite(25,LOW);
+
+
+
+    }
+  }
+
+//
+//  if (gameRunning && Gpass == 200) {
+//    startup();
+//
+//  }
+
+}
+
+
+
+void randomgenrate(int a, int b) {
+  randomno = random(a, b);
+  while (previousno == randomno) {
+    randomno = random(a, b);
+    if (previousno != randomno) {
+      break;
+    }
+  }
+
+  previousno = randomno;
+}
+
+void randomgenrate2(int a, int b) {
+  randomno2 = random(a, b);
+  while (previousno2 == randomno2) {
+    randomno2 = random(a, b);
+    if (previousno2 != randomno2) {
+      break;
+    }
+  }
+
+  previousno2 = randomno2;
+}
+
+void Display1stScore()
+{
+  int cursor = 21;  // Last LED for first display
+
+  Fd1 = (Score1 < 10) ? 1 : (Score1 < 100) ? 2 : 3;
+
+  for (int i = 1; i <= Fd1; i++)
+  {
+    int digit = 0;
+    if (i == 1) {
+      cursor = 14;
+      digit = Score1 % 10;
+    } else if (i == 2) {
+      cursor = 7;
+      digit = (Score1 / 10 % 10);
+    } else if (i == 3) {
+      cursor = 0;
+      digit = (Score1 / 100 % 10);
+    }
+    for (int k = 0; k <= 6; k++) {
+      leds[cursor] = digits[digit][k] ? CRGB::Blue : 0x000000;
+      cursor++;
+    }
+  }
+}
+
+// Function to display score on the second 7-segment display (next 21 LEDs)
+void Display2ndScore()
+{
+  int cursor = 42;  // Last LED for second display
+
+  Fd2 = (Score2 < 10) ? 1 : (Score2 < 100) ? 2 : 3;
+
+  for (int i = 1; i <= Fd2; i++)
+  {
+    int digit = 0;
+    if (i == 1) {
+      cursor = 35;
+      digit = Score2 % 10;
+    } else if (i == 2) {
+      cursor = 28;
+      digit = (Score2 / 10 % 10);
+    } else if (i == 3) {
+      cursor = 21;
+      digit = (Score2 / 100 % 10);
+    }
+    for (int k = 0; k <= 6; k++) {
+      leds[cursor] = digits[digit][k] ? CRGB::Red : 0x000000;
+      cursor++;
+    }
+  }
+}+
+
+// Function to display score on the second 7-segment display (next 21 LEDs)
+void Display3ndScore()
+{
+  int cursor = 42;  // Last LED for second display
+
+  Fd2 = (Score3 < 10) ? 1 : (Score3 < 100) ? 2 : 3;
+
+  for (int i = 1; i <= Fd2; i++)
+  {
+    int digit = 0;
+    if (i == 1) {
+      cursor = 35;
+      digit = Score3 % 10;
+    } else if (i == 2) {
+      cursor = 28;
+      digit = (Score3 / 10 % 10);
+    } else if (i == 3) {
+      cursor = 21;
+      digit = (Score3 / 100 % 10);
+    }
+    for (int k = 0; k <= 6; k++) {
+      leds[cursor] = digits[digit][k] ? CRGB::Green : 0x000000;
+      cursor++;
+    }
+  }
+}

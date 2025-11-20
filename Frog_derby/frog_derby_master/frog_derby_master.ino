@@ -197,7 +197,7 @@ void SerialTask(void *pvParameters) {
             int peerIndex = i - 1;
             Serial.println("stoped by ble");
             sendGameDataToPeer(peerIndex, i, 200, 0, gametime);
-            sendDataToUART(1, 200, scores[i - 1], gametime);
+            sendDataToUART(i, 200, scores[i - 1], gametime);
             vTaskDelay(pdMS_TO_TICKS(10));
 
           }
@@ -275,9 +275,9 @@ void onGameMessage(struct_message data) {
     //    Serial.println(incoming5);
     //data.gameStatus = 0;
     datapass = true;
-
-  }
   sendDataToUART(data.id, data.gameStatus, data.score, data.time);
+  }
+  
 }
 
 // ===== HARDWARE TIMER STEPPER PULSE =====

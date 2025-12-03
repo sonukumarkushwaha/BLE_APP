@@ -27,6 +27,7 @@ bool deviceConnected = false;
 // ================== GAME VARIABLES ==================
 HardwareSerial MySerial(2);
 
+bool ready = false;
 int recivedtime = 60;
 int counting = 0;
 int players = 1;
@@ -48,7 +49,7 @@ int max_players = 4;
 int GameID = 54;
 int default_time = 60;
 String difficulty = "hard";
-String gameMode = "individual";
+String gameMode = "competition";
 
 String gamestat = "end";
 int recivedscore1 = 0;
@@ -64,13 +65,14 @@ int scoresAll[8] = {
   recivedscore1, recivedscore2, recivedscore3, recivedscore4,
   recivedscore5, recivedscore6, recivedscore7, recivedscore8
 };
-  
+
 // ================== BLE SERVER CALLBACKS ==================
 class MyServerCallbacks: public BLEServerCallbacks {
     void onConnect(BLEServer* pServer) {
       deviceConnected = true;
       Serial.println("BLE Client Connected");
-     // sendDataToUART(100, false, recivedtime);
+      delay(200);
+      // sendDataToUART(100, false, recivedtime);
 
     }
     void onDisconnect(BLEServer* pServer) {
@@ -174,9 +176,15 @@ void handleSubmit(String qrDataAll) {
     Serial.println("QR format");
   }
   if (command == "start") {
-    sendDataToUART(startplayer, true, recivedtime);
-    delay(100);
-    sendBLE("ok");
+    if (ready == false) {
+      sendBLE("not ready");
+    }
+    else {
+      sendDataToUART(startplayer, true, recivedtime);
+      delay(100);
+      sendBLE("ok");
+    }
+
   }
   else {
     Serial.println("Submit Request: " + qrDataAll);
@@ -240,8 +248,19 @@ void handleStatus(String gameId) {
     sendBLE(jsonResponse);
 
   }
-  else {
+  else if (gameId == "ready") {
 
+    if (ready) {
+      sendBLE("ready");
+      Serial.println("ready trigger");
+    }
+    else {
+      sendBLE("not_ready");
+    }
+  }
+  else if (ready) {
+    Serial.print("ready");
+    Serial.println(ready);
     Serial.println("Status Request for Game: " + gameId);
 
     String gameStatus = gamestat;
@@ -264,6 +283,33 @@ void handleStatus(String gameId) {
 
     sendBLE(jsonResponse);
   }
+  else {
+    Serial.print("ready");
+    Serial.println(ready);
+    Serial.println("Status Request for Game: " + gameId);
+
+    String gameStatus = "end";
+    int gameTime = recivedtime;
+
+    // ⚡ Build JSON dynamically based on "players"
+    String jsonResponse = "{";
+    jsonResponse += "\"game_status\":\"" + gameStatus + "\",";
+    jsonResponse += "\"game_time\":" + String(gameTime) + ",";
+    jsonResponse += "\"players\":" + String(players) + ",";
+    jsonResponse += "\"scores\":[";
+
+    for (int i = 0; i < players; i++) {
+      jsonResponse += String(scoresAll[i]);
+      if (i < players - 1) jsonResponse += ",";
+    }
+
+    jsonResponse += "]";
+    jsonResponse += "}";
+
+    sendBLE(jsonResponse);
+
+
+  }
 }
 
 
@@ -277,15 +323,21 @@ void handleTrigger(String command) {
     Serial.println("Game STOP triggered!");
     sendDataToUART(counting, false, recivedtime);
     gamestat = "end";
-  } else if (triggerCommand == "restart") {
+    ready = false;
+    sendBLE(command);
+  } else if (triggerCommand == "restart" && ready == true) {
     Serial.println("Game START triggered!");
     gamestat = "running";
     sendDataToUART(counting, true, recivedtime);
     for (int i = 0; i < players; i++) {
       scoresAll[i] = 0;
     }
+    sendBLE(command);
   }
-  sendBLE(command);
+  else {
+    sendBLE("not_ready");
+  }
+
 }
 
 void handletimer(String timing) {
@@ -365,8 +417,12 @@ void uartreceive() {
     }
     if (id >= 1 && id <= players) {
       scoresAll[id - 1] = score;   // store the score in correct index
-      if (status == 100) gamestat = "running";
-      if (status == 200) gamestat = "end";
+      if (status == 100 && ready) gamestat = "running";
+      if (status == 200) {
+        ready = false;
+        gamestat = "end";
+      }
+      if (status == 500) ready = true;
       if (status == 400) {
         gamestat = "reached";
         String jsonResponse = "{";
@@ -380,7 +436,9 @@ void uartreceive() {
     }
 
     if (id != 20) {
-      handleStatus("20");
+      if (deviceConnected) {
+        handleStatus("20");
+      }
     }
     if (id == 20) {
       delay(2000);

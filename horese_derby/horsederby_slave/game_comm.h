@@ -7,6 +7,7 @@
 // ========== Configuration ==========
 #define NUM_PEERS 1
 
+uint8_t allowedSender[6] = { 0xF8, 0xB3, 0xB7, 0xC5, 0xFB, 0x6C};  // <-- CHANGE THIS to REAL MASTER MAC
 uint8_t peerAddresses[][6] = {
 //  {0xF8, 0xB3, 0xB7, 0xC6, 0x00, 0xB0},
 //  {0x24, 0xDC, 0xC3, 0x9B, 0xBD, 0x48},
@@ -20,20 +21,42 @@ typedef struct struct_message {
   int score;
   int time;
 } struct_message;
-extern void onGameMessage(struct_message data);
-// Internal function
-inline void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len) {
-  struct_message receivedData;
-  memcpy(&receivedData, incomingData, sizeof(receivedData));
-  // Optional debug:
- 
-  Serial.printf("Received from %02X:%02X:%02X:%02X:%02X:%02X - ID: %d, Status: %d, Score: %d, Time: %d\n",
-                mac[0], mac[1], mac[2], mac[3], mac[4], mac[5],
-                receivedData.id, receivedData.gameStatus, receivedData.score, receivedData.time);
- 
-  onGameMessage(receivedData);
+
+bool isSameMac(const uint8_t *a, const uint8_t *b) {
+  for (int i = 0; i < 6; i++) if (a[i] != b[i]) return false;
+  return true;
 }
 
+extern void onGameMessage(struct_message data);
+// Internal function
+//inline void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len) {
+//  struct_message receivedData;
+//  memcpy(&receivedData, incomingData, sizeof(receivedData));
+//  // Optional debug:
+// 
+//  Serial.printf("Received from %02X:%02X:%02X:%02X:%02X:%02X - ID: %d, Status: %d, Score: %d, Time: %d\n",
+//                mac[0], mac[1], mac[2], mac[3], mac[4], mac[5],
+//                receivedData.id, receivedData.gameStatus, receivedData.score, receivedData.time);
+// 
+//  onGameMessage(receivedData);
+//}
+inline void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len) {
+
+  // FILTER: ignore packets not from the allowed sender
+  if (!isSameMac(mac, allowedSender)) {
+    Serial.println("⚠️ Ignored packet: Wrong MAC");
+    return;
+  }
+
+  struct_message receivedData;
+  memcpy(&receivedData, incomingData, sizeof(receivedData));
+
+
+  Serial.printf("📩 Received from %02X:%02X:%02X:%02X:%02X:%02X\n",
+          mac[0],mac[1],mac[2],mac[3],mac[4],mac[5]);
+
+  onGameMessage(receivedData);
+}
 inline void setupGameComm() {
   WiFi.mode(WIFI_STA);
   if (esp_now_init() != ESP_OK) {

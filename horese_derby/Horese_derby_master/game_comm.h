@@ -6,12 +6,19 @@
 
 // ========== Configuration ==========
 #define NUM_PEERS 5
+uint8_t allowedSender[NUM_PEERS][6] = {
+  {0xF8, 0xB3, 0xB7, 0xC6, 0x32, 0xA4},   //h1
+  {0xF8, 0xB3, 0xB7, 0xC6, 0x32, 0x9C},   //h2
+  {0xF8, 0xB3, 0xB7, 0xC6, 0x2F, 0x9C},   //h3
+  {0xF8, 0xB3, 0xB7, 0xC6, 0x32, 0xB4},   //h4 F8:B3:B7:C6:32:B4
+  {0xF8, 0xB3, 0xB7, 0xC6, 0x32, 0xAC}    //h5 f8:b3:b7:c6:32:ac
+};
 uint8_t peerAddresses[NUM_PEERS][6] = {
-  {0xF8, 0xB3, 0xB7, 0xC6, 0x32, 0xa4},   //h1
-  {0xf8, 0xb3, 0xb7, 0xc6, 0x32, 0x9c},   //h2
-  {0xf8, 0xb3, 0xb7, 0xc6, 0x2f, 0x9c},   //h3
-  {0xfb, 0xb3, 0xb7, 0xc6, 0x32, 0xb4},   //h4
-  {0xf8, 0xb3, 0xb7, 0xc6, 0x32, 0xAC}    //h5 f8:b3:b7:c6:32:ac
+  {0xF8, 0xB3, 0xB7, 0xC6, 0x32, 0xA4},   //h1
+  {0xF8, 0xB3, 0xB7, 0xC6, 0x32, 0x9C},   //h2
+  {0xF8, 0xB3, 0xB7, 0xC6, 0x2F, 0x9C},   //h3
+  {0xF8, 0xB3, 0xB7, 0xC6, 0x32, 0xB4},   //h4
+  {0xF8, 0xB3, 0xB7, 0xC6, 0x32, 0xAC}    //h5 f8:b3:b7:c6:32:ac
 };
 // ===================================
 
@@ -21,22 +28,55 @@ typedef struct struct_message {
   int score;
   int time;
 } struct_message;
-
+// ============ HELPERS (declare BEFORE use) ============
+bool isSameMac(const uint8_t *a, const uint8_t *b) {
+  for (int i = 0; i < 6; i++) {
+    if (a[i] != b[i]) return false;
+  }
+  return true;
+}
 extern void onGameMessage(struct_message data);
 
 // Internal function
+//inline void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len) {
+//  struct_message receivedData;
+//  memcpy(&receivedData, incomingData, sizeof(receivedData));
+//  // Optional debug:
+//  
+//    Serial.printf("Received from %02X:%02X:%02X:%02X:%02X:%02X - ID: %d, Status: %d, Score: %d, Time: %d\n",
+//                mac[0], mac[1], mac[2], mac[3], mac[4], mac[5],
+//                receivedData.id, receivedData.gameStatus, receivedData.score, receivedData.time);
+//  
+//
+//  onGameMessage(receivedData);
+//}
+//mac filter
+
 inline void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len) {
+
+  bool allowed = false;
+  for (int i = 0; i < NUM_PEERS; i++) {
+    if (isSameMac(mac, allowedSender[i])) {
+      allowed = true;
+      break;
+    }
+  }
+
+  if (!allowed) {
+    Serial.printf("⛔ Rejected MAC %02X:%02X:%02X:%02X:%02X:%02X\n",
+                  mac[0],mac[1],mac[2],mac[3],mac[4],mac[5]);
+    return;
+  }
+
   struct_message receivedData;
   memcpy(&receivedData, incomingData, sizeof(receivedData));
-  // Optional debug:
-  
-    Serial.printf("Received from %02X:%02X:%02X:%02X:%02X:%02X - ID: %d, Status: %d, Score: %d, Time: %d\n",
-                mac[0], mac[1], mac[2], mac[3], mac[4], mac[5],
-                receivedData.id, receivedData.gameStatus, receivedData.score, receivedData.time);
-  
+
+  Serial.printf("📩 Accepted from %02X:%02X:%02X:%02X:%02X:%02X\n",
+                mac[0],mac[1],mac[2],mac[3],mac[4],mac[5]);
 
   onGameMessage(receivedData);
 }
+
 
 void sendGameDataToPeer(int peerIndex, int fixedId, int status, int currentScore, int currentTime) {
   if (peerIndex < 0 || peerIndex >= NUM_PEERS) {
@@ -64,6 +104,10 @@ inline void setupGameComm() {
     Serial.println("ESP-NOW init failed");
     ESP.restart();
   }
+  else{
+    Serial.print("ESP32 ESPNOW MAC: ");
+  Serial.println(WiFi.macAddress());
+    }
 
   esp_now_register_recv_cb(OnDataRecv);
 

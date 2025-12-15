@@ -29,7 +29,7 @@ int gametime = 60;
 int players = 4;
 
 bool start = false;
-
+bool game_end = false;
 byte digits[10][7] =  {{1, 1, 1, 1, 1, 1, 0}, // Digit 0Timers
   {0, 1, 1, 0, 0, 0, 0}, // Digit 1
   {1, 1, 0, 1, 1, 0, 1}, // Digit 2
@@ -193,15 +193,32 @@ void SerialTask(void *pvParameters) {
         }
 
         if (start == false && players >= 1 && players < 9) {
-          for (int i = 1; i <= Maxplayers; i++) {
-            int peerIndex = i - 1;
+          Serial.println("Stepper end point*** Game over ");
+          for (int i = 0; i < 4; i++) {
+            pcf8574_Stepper.digitalWrite(i, LOW);
+          }
+          digitalWrite(Buzzer, HIGH);
+          for (int i = 1; i <= players; i++) {
+            int peerIndex = i - 1;  // because array starts from 0
             Serial.println("stoped by ble");
             sendGameDataToPeer(peerIndex, i, 200, 0, gametime);
             sendDataToUART(i, 200, scores[i - 1], gametime);
-            vTaskDelay(pdMS_TO_TICKS(10));
-
+            delay(10);
           }
-          vTaskDelay(pdMS_TO_TICKS(5000));
+          vTaskDelay(pdMS_TO_TICKS(2000));
+          digitalWrite(Buzzer, LOW);
+          vTaskDelay(pdMS_TO_TICKS(8000));
+          digitalWrite(Dir, LOW);  // coming to startpoint
+       //   limitpin = -1;
+       //   button_pressed_limit = false;
+          game_end = false;
+          start = false;
+          //    startup();
+//          vTaskDelay(pdMS_TO_TICKS(5000));
+//          // limitpin = -1;
+//          game_end = true;
+          //  button_pressed_limit = false;
+                   ESP.restart();
 
         }
       }
@@ -246,26 +263,26 @@ void onGameMessage(struct_message data) {
 
   if (data.gameStatus == 100) {
     if (data.id == 1) {
-      incoming1 = 500;
+      incoming1 = 900;
       Score1 = data.score;
 
       Serial.print("score1 = ");
       Serial.println(Score1);
     }
     if (data.id == 2) {
-      incoming2 = 500;
+      incoming2 = 900;
       Score2 = data.score;
       Serial.print("score2 = ");
       Serial.println(Score2);
     }
     if (data.id == 3) {
-      incoming3 = 500;
+      incoming3 = 900;
       Score3 = data.score;
       Serial.print("Score3 = ");
       Serial.println(Score3);
     }
     if (data.id == 4) {
-      incoming4 = 500;
+      incoming4 = 900;
       Score4 = data.score;
       Serial.print("score4 = ");
       Serial.println(Score4);
@@ -274,10 +291,18 @@ void onGameMessage(struct_message data) {
     //    Serial.print("incoming5 = ");
     //    Serial.println(incoming5);
     //data.gameStatus = 0;
-    datapass = true;
-  sendDataToUART(data.id, data.gameStatus, data.score, data.time);
+    if (data.gameStatus == 200) {
+      datapass = true;
+      sendDataToUART(data.id, data.gameStatus, data.score, data.time);
+      delay(2000);
+      data.gameStatus = 0;
+    }
+    else {
+      datapass = true;
+      sendDataToUART(data.id, data.gameStatus, data.score, data.time);
+    }
   }
-  
+
 }
 
 // ===== HARDWARE TIMER STEPPER PULSE =====
@@ -296,6 +321,7 @@ void setup() {
   setupGameComm();
   pinMode(Dir, OUTPUT);
   pinMode(Step, OUTPUT);
+  pinMode(start_button,INPUT_PULLUP);
   // 1us tick timer (80MHz / 80)
   stepTimer = timerBegin(0, 80, true);
 
@@ -306,11 +332,8 @@ void setup() {
   timerAlarmWrite(stepTimer, 300, true);
 
   // Start timer
-  timerAlarmEnable(stepTimer);
-
-  pinMode(start_button, INPUT_PULLUP);
-  FastLED.addLeds<WS2812B, 14, GRB>(leds_score, NUM_LEDS_score);
-  FastLED.addLeds<WS2812B, 26, GRB>(ledssec, NUM_LEDS_timer);
+  timerAlarmEnable(stepTimer);15, GRB>(leds_score, NUM_LEDS_score);
+  FastLED.addLeds<WS2812B, 4, GRB>(ledssec, NUM_LEDS_timer);
   FastLED.setBrightness(255);
   MySerial.begin(9600, SERIAL_8N1, 16, 17);  // Baud, config, RX, TX
   Serial.println("UART Receiver ready on pins 16 (RX) and 17 (TX)");
@@ -389,10 +412,11 @@ void startup() {
 
   while (1) {
     if (passlimit1 == 1 && passlimit2 == 1 && passlimit3 == 1 && passlimit4 == 1) {
+      sendDataToUART(1, 500, 0, gametime);
       break;
     }
     else {
-      Serial.println("returnig to original position ");
+      Serial.println("returning to original position ");
       digitalWrite(Dir, HIGH);               // Step reverse coming to start point
       startpoint();
     }
@@ -442,6 +466,7 @@ void startup() {
       digitalWrite(Buzzer, HIGH);
       delay(1000);
       digitalWrite(Buzzer, LOW);
+
       break;
     }
     vTaskDelay(1);
@@ -513,10 +538,8 @@ void startpoint() {
     }
   }
 }
-
+ 
 void loop() {
-
-
   for (int i = 0; i < 8; i++) {
     // Use forceReadNow to read the status
     uint8_t limitStatus2 = pcf8574_Limit2.digitalRead(i, true);  // Force read now
@@ -589,7 +612,7 @@ void loop() {
       break;
     }
   }
-  
+
   //    Serial.print("reached1 array = ");
   //    Serial.print(reachedList[0]);
   //    Serial.print("reached1 default = ");
@@ -618,8 +641,10 @@ void loop() {
     digitalWrite(Dir, LOW);  // coming to startpoint
     limitpin = -1;
     button_pressed_limit = false;
-    startup();
+    game_end = false;
     start = false;
+    startup();
+
 
   }
 
@@ -776,17 +801,37 @@ void loop() {
     ranks[i] = rank;
   }
 
-  //  // Print scores and ranks
-  //  for (int i = 0; i < 5; i++) {
-  //    Serial.print("Player ");
-  //    Serial.print(i + 1);
-  //    Serial.print(" Score: ");
-  //    Serial.print(scores[i]);
-  //    Serial.print("  Rank: ");
-  //    Serial.println(ranks[i]);
-  //
-  //
-  //  }
+  // Print scores and ranks
+  for (int i = 0; i < 5; i++) {
+    Serial.print("Player ");
+    Serial.print(i + 1);
+    Serial.print(" Score: ");
+    Serial.print(scores[i]);
+    Serial.print("  Rank: ");
+    Serial.println(ranks[i]);
+    if (i == 0 ) {
+      rank1 = ranks[i];
+      Display1stScore();
+    }
+    if (i == 1) {
+      rank2 = ranks[i];
+      Display2ndScore();
+    }
+    if (i == 2) {
+      rank3 = ranks[i];
+      Display3rdScore();
+    }
+    if (i == 3) {
+      rank4 = ranks[i];
+      Display4thScore();
+    }
+    if (i == 4) {
+      rank5 = ranks[i];
+      Display5thScore();
+    }
+
+  }
+  FastLED.show();
   //********************************************************************************
 }
 

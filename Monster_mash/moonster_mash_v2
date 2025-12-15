@@ -1,0 +1,436 @@
+#include <FastLED.h>
+#include <PCF8574.h>
+
+// ---------------- LED CONFIG ----------------
+#define NUM_LEDS        105
+#define NUM_LEDS_timer  21
+#define button_pin      39
+
+CRGB leds[NUM_LEDS];
+CRGB leds1ST[NUM_LEDS_timer];
+
+int Timers;
+
+// ---------------- GAME SETTINGS ----------------
+int Score1 = 0, Score2 = 0, Score3 = 0, Score4 = 0, Score5 = 0;
+int GameID = 102;
+int Maxplayers = 5;
+int gametime = 60;
+int players = 5;
+
+bool start = false;
+bool startGame = false;
+
+// ---------------- PCF8574 CONFIG ----------------
+// Two INPUT PCFs + One OUTPUT PCF
+PCF8574 pcfA(0x38);   // Game sensors first 8
+PCF8574 pcfB(0x39);   // Game sensors + Startup sensors
+PCF8574 pcfOutput(0x3C); // Outputs for motors
+
+HardwareSerial MySerial(2);
+
+// ---------------- DIGIT TABLE ----------------
+byte digits[10][7] = {
+  {1, 1, 1, 1, 1, 1, 0},
+  {0, 1, 1, 0, 0, 0, 0},
+  {1, 1, 0, 1, 1, 0, 1},
+  {1, 1, 1, 1, 0, 0, 1},
+  {0, 1, 1, 0, 0, 1, 1},
+  {1, 0, 1, 1, 0, 1, 1},
+  {1, 0, 1, 1, 1, 1, 1},
+  {1, 1, 1, 0, 0, 0, 0},
+  {1, 1, 1, 1, 1, 1, 1},
+  {1, 1, 1, 1, 0, 1, 1}
+};
+
+// ---------------- SENSOR MAP ----------------
+// 15 total sensors → 10 game + 5 startup
+
+
+
+
+struct SensorMap {
+  PCF8574* dev;
+  uint8_t pin;
+};
+
+SensorMap sensors[15] = {
+  // Game sensors on PCF-A (0–7)
+  { &pcfA, 0 }, { &pcfA, 1 }, { &pcfA, 2 }, { &pcfA, 3 },
+  { &pcfA, 4 }, { &pcfA, 5 }, { &pcfA, 6 }, { &pcfA, 7 },
+
+  // Game sensors on PCF-B (8–9)
+  { &pcfB, 0 },
+  { &pcfB, 1 },
+
+  // Startup sensors (5 sensors)
+  { &pcfB, 2 },
+  { &pcfB, 3 },
+  { &pcfB, 4 },
+  { &pcfB, 5 },
+  { &pcfB, 6 }
+};
+
+
+// 5 players × 2 sensors
+const int sensorPairs[5][2] = {
+  {0, 1},
+  {2, 3},
+  {4, 5},
+  {6, 7},
+  {8, 9}
+};
+
+long int scores[5] = {0, 0, 0, 0, 0};
+unsigned long lastTriggerTime[5][2] = {0};
+unsigned long lastCountdownTime = 0;
+unsigned long startTime;
+
+const unsigned long debounceDelay = 180;
+const unsigned long gameDuration = gametime * 1000;
+
+//======================================serialtask==================
+void SerialTask(void *pvParameters) {
+  (void) pvParameters;
+
+  String serialdata = "";
+  while (true) {
+    if (MySerial.available()) {
+      serialdata = MySerial.readStringUntil('\n');
+      serialdata.trim();
+
+      if (serialdata.length() > 0) {
+        Serial.println("Received: " + serialdata);
+
+        // Parse players
+        int playersIndex = serialdata.indexOf("\"players\":");
+        if (playersIndex != -1) {
+          int commaIndex = serialdata.indexOf(",", playersIndex);
+          String playersStr = serialdata.substring(playersIndex + 10, commaIndex);
+          players = playersStr.toInt();
+        }
+
+        // Parse timer
+        int timerIndex = serialdata.indexOf("\"timer\":");
+        if (timerIndex != -1) {
+          int commaIndex = serialdata.indexOf(",", timerIndex);
+          String timersStr = serialdata.substring(timerIndex + 8, commaIndex);
+          timersStr.trim();
+          gametime = timersStr.toInt();
+          Serial.print("game time = ");
+          Serial.println(gametime);
+        }
+
+        // Parse start
+        int startIndex = serialdata.indexOf("\"start\":");
+        if (startIndex != -1) {
+          String startStr = serialdata.substring(startIndex + 8);
+          startStr.trim();
+          startStr.replace("}", "");
+          if (startStr == "true") start = true;
+          else start = false;
+        }
+
+        Serial.print("Players = ");
+        Serial.println(players);
+        Serial.print("Start = ");
+        Serial.println(start ? "true" : "false");
+
+        // === Execute actions based on received serialdata ===
+        if (start == false && players == 100) {
+          sendDataToUART(20, Maxplayers, GameID, gametime);
+          players = 0;
+        }
+
+        if (start == true) {
+          Serial.println("started by ble");
+          Score1 = 0;
+          Score2 = 0;
+          Score3 = 0;
+          Score4 = 0;
+          Score5 = 0;
+          sendDataToUART(1, 100, 0, gametime);
+
+
+        }
+
+        if (start == false && players == 0) {
+          Serial.println("time saved");
+          Serial.println(gametime);
+
+        }
+
+        if (start == false && players >= 1 && players < 9) {
+          //STOPED BY BLE
+          Serial.println("stoped by ble");
+          sendDataToUART(1, 200, scores[0], gametime);
+          vTaskDelay(pdMS_TO_TICKS(2000));
+          ESP.restart();
+
+        }
+      }
+    }
+
+    // Game timer countdown handling
+    //    if (start) {
+    //      static unsigned long previousMillis = 0;
+    //      unsigned long currentMillis = millis();
+    //      if (currentMillis - previousMillis >= 1000) {
+    //        previousMillis = currentMillis;
+    //        gametime--;
+    //
+    ////        Serial.print("Time left: ");
+    ////        Serial.println(gametime);
+    //        timer = gametime;
+    //        Displaytimerr();
+    //        FastLED.show();
+    //
+    //        //        if (gametime < 1) {
+    //        //
+    //        //         // sendDataToUART(1, 200, Score1, gametime);
+    //        //          vTaskDelay(pdMS_TO_TICKS(5000));
+    //        //          start = false;
+    //        //        }
+    //      }
+    //
+    //      Display1stScore();
+    //      Display2ndScore();
+    //      Display3rdScore();
+    //      Display4thScore();
+    //      Display5thScore();
+    //      FastLED.show();
+    //    }
+
+    vTaskDelay(pdMS_TO_TICKS(20)); // yield CPU, no blocking
+  }
+}
+
+
+// ------------------------------------------------------------
+// SEND DATA OVER UART
+// ------------------------------------------------------------
+void sendDataToUART(int id, int status, int score, int time) {
+  String data = "{";
+  data += "\"id\":" + String(id) + ",";
+  data += "\"status\":\"" + String(status) + "\",";
+  data += "\"score\":" + String(score) + ",";
+  data += "\"time\":" + String(time);
+  data += "}";
+
+  MySerial.println(data);
+  Serial.println("Sent: " + data);
+}
+
+// ------------------------------------------------------------
+// STARTUP SEQUENCE (READ LAST 5 PINS OF PCF-B)
+// ------------------------------------------------------------
+void startup() {
+
+  sendDataToUART(1, 500, 0, gametime);
+
+  while (!startGame) {
+
+    // Startup 5 sensors on pcfB pins 3–7
+    for (int i = 0; i < 5; i++) {
+
+      int state = pcfB.digitalRead(2 + i);
+      pcfOutput.digitalWrite(2 + i, !state);
+      //      Serial.print("pin = ");
+      //      Serial.print(i);
+      //      Serial.print("  state = ");
+      //      Serial.println(state);
+      //delay(100);
+    }
+
+    Serial.println(".");
+
+    if (digitalRead(button_pin) == LOW || start) {
+      for (int i = 0; i < players; i++){ 
+        
+        pcfOutput.digitalWrite(2 + i, LOW);
+        delay(5);
+        }
+
+      startGame = true;
+
+      for (int k = 0; k < NUM_LEDS; k++) leds[k] = CRGB::Black;
+      FastLED.show();
+
+      sendDataToUART(1, 100, 0, gametime);
+
+      for (int i = 0; i < 5; i++) scores[i] = 0;
+
+      Score1 = scores[0]; Display1stScore();
+      Score2 = scores[1]; Display2ndScore();
+      Score3 = scores[2]; Display3rdScore();
+      Score4 = scores[3]; Display4thScore();
+      Score5 = scores[4]; Display5thScore();
+
+      FastLED.show();
+      break;
+    }
+
+    delay(10);
+  }
+
+  startTime = millis();
+}
+
+// ------------------------------------------------------------
+// SETUP
+// ------------------------------------------------------------
+void setup() {
+  Serial.begin(115200);
+  pinMode(button_pin, INPUT);
+
+  FastLED.addLeds<WS2812B, 25, GRB>(leds, NUM_LEDS);
+  FastLED.addLeds<WS2812B, 4, GRB>(leds1ST, NUM_LEDS_timer);
+  FastLED.setBrightness(255);
+
+  MySerial.begin(9600, SERIAL_8N1, 16, 17);
+  xTaskCreate(
+    SerialTask,
+    "SerialTask",
+    4096,   // Stack size for string handling
+    NULL,
+    1,      // Slightly higher priority than Task1
+    NULL
+  );
+
+  // Enable pull-ups for all 15 sensors
+  for (int i = 0; i < 15; i++) {
+    sensors[i].dev->pinMode(sensors[i].pin, INPUT);
+    sensors[i].dev->digitalWrite(sensors[i].pin, HIGH);
+  }
+
+  pcfA.begin();
+  pcfB.begin();
+  pcfOutput.begin();
+  for (int i = 0; i < 8; i++) {
+    pcfOutput.pinMode(i, OUTPUT);  // <<< REQUIRED
+    pcfOutput.digitalWrite(i, HIGH); // initialize LOW
+  }
+
+
+  delay(2000);
+  startup();
+}
+
+
+// ------------------------------------------------------------
+// LOOP — TIMER + SENSOR CHECK
+// ------------------------------------------------------------
+void loop() {
+
+  unsigned long currentTime = millis();
+  unsigned long elapsedTime = currentTime - startTime;
+  unsigned long remainingTime = (gameDuration > elapsedTime) ? gameDuration - elapsedTime : 0;
+  int remainingSeconds = remainingTime / 1000;
+
+  // ------- TIMER DISPLAY -------
+  if (currentTime - lastCountdownTime >= 1000) {
+    lastCountdownTime = currentTime;
+
+    for (int i = 0; i < NUM_LEDS_timer; i++)
+      leds1ST[i] = CRGB::Black;
+
+    Timers = remainingSeconds;
+    displaytimer();
+    FastLED.show();
+  }
+
+  // ------- GAME OVER -------
+  if (remainingTime == 0) {
+    sendDataToUART(1, 200, scores[0], gametime);
+    Serial.println("Game Over!");
+    startGame = false;
+    start = false;
+    delay(2000);
+    startup();
+    return;
+  }
+
+  // ------- READ GAME SENSORS -------
+  for (int player = 0; player < 5; player++) {
+    for (int s = 0; s < 2; s++) {
+
+      int index = sensorPairs[player][s];
+
+      if (currentTime - lastTriggerTime[player][s] > debounceDelay) {
+
+        bool triggered = sensors[index].dev->digitalRead(sensors[index].pin) == LOW;
+
+        if (triggered) {
+          scores[player]++;
+          sendDataToUART(player+1, 100, scores[player], remainingSeconds);
+          lastTriggerTime[player][s] = currentTime;
+          updateDisplay(player);
+        }
+      }
+      delay(2);
+    }
+  }
+}
+
+// ------------------------------------------------------------
+// DISPLAY + SCORE FUNCTIONS (UNCHANGED)
+// ------------------------------------------------------------
+void updateDisplay(int playerIndex) {
+  switch (playerIndex) {
+    case 0: Score1 = scores[0]; Display1stScore(); break;
+    case 1: Score2 = scores[1]; Display2ndScore(); break;
+    case 2: Score3 = scores[2]; Display3rdScore(); break;
+    case 3: Score4 = scores[3]; Display4thScore(); break;
+    case 4: Score5 = scores[4]; Display5thScore(); break;
+  }
+  FastLED.show();
+}
+
+void Display1stScore() {
+  displayScoreOnLED(Score1, 0, CRGB::Fuchsia);
+}
+void Display2ndScore() {
+  displayScoreOnLED(Score2, 21, CRGB::Red);
+}
+void Display3rdScore() {
+  displayScoreOnLED(Score3, 42, CRGB::Blue);
+}
+void Display4thScore() {
+  displayScoreOnLED(Score4, 63, CRGB::Green);
+}
+void Display5thScore() {
+  displayScoreOnLED(Score5, 84, CRGB::Yellow);
+}
+
+void displayScoreOnLED(int score, int startIndex, CRGB color) {
+  int cursor = startIndex + 14;
+  int numDigits = (score < 10) ? 1 : (score < 100) ? 2 : 3;
+
+  for (int i = 1; i <= numDigits; i++) {
+    int digit = (i == 1) ? score % 10 :
+                (i == 2) ? (score / 10) % 10 :
+                (score / 100) % 10;
+
+    cursor = startIndex + (14 - (i - 1) * 7);
+
+    for (int k = 0; k < 7; k++)
+      leds[cursor++] = digits[digit][k] ? color : CRGB::Black;
+  }
+}
+
+void displaytimer() {
+  int cursor = 0;
+  int digitsToShow = (Timers < 10) ? 1 : (Timers < 100) ? 2 : 3;
+
+  for (int pos = 0; pos < digitsToShow; pos++) {
+
+    int digit = (pos == 0) ? (Timers % 10) :
+                (pos == 1) ? (Timers / 10) % 10 :
+                (Timers / 100) % 10;
+
+    cursor = 14 - pos * 7;
+
+    for (int k = 0; k < 7; k++)
+      leds1ST[cursor + k] = digits[digit][k] ? CRGB::Red : CRGB::Black;
+  }
+}

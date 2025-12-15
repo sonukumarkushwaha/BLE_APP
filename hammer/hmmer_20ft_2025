@@ -1,0 +1,530 @@
+#include <FastLED.h>
+#include <EEPROM.h>
+#include <SoftwareSerial.h>
+#include "DFRobotDFPlayerMini.h"
+#include <EEPROM.h>
+#define EEPROM_SIZE 12
+
+
+//--------------------------------------
+#include <WS2812FX.h>
+
+#define LED_COUNT 134
+HardwareSerial MySerial(2);
+
+
+#define TIMER_MS 5000
+//----------------------------------------
+SoftwareSerial mySoftwareSerial(33, 32); // RX, TX
+DFRobotDFPlayerMini myDFPlayer;
+
+
+//------------------PINS AND THEIR CONNECTIONS------------------
+
+#define IR_SENSOR_1 35          //// CONNECTED TO SIGNAL1
+#define IR_SENSOR_2 25          //// CONNECTED TO SIGNAL2
+#define LED_PIN1 18            //// CONNECTED TO RANGE BAR1
+#define LED_PIN2 27             //// CONNECTED TO RANGE BAR 2
+#define button 34               //// CONNECTED TO BUTTON 3--SW3
+#define button2 39               //// CONNECTED TO BUTTON 2--SW2
+#define FIRST_SCORE 13          //// CONNECTED TO SCORE-1 
+#define SECOND_SCORE 14         //// CONNECTED TO SCORE-2   
+#define HIGH_SCORE 26           //// CONNECTED TO SCORE-3
+
+//------------------DEFINE NO OF LEDS--------------------------
+
+#define NUM_LEDS 134            /// NO. TOTAL LED COUNTS IN RGB STRIPS
+#define NUM_LEDS_score 28       /// NO. OF TOTAL SEGMENTS IN SCORE BOARD 
+
+
+
+CRGB leds1[NUM_LEDS];
+CRGB leds2[NUM_LEDS];
+CRGB leds1ST_score[NUM_LEDS_score];
+CRGB leds2ND_score[NUM_LEDS_score];
+CRGB leds_highest_score[NUM_LEDS_score];
+
+//--------------------------------------------------------------
+int str = 2800; // for adult
+//int str=5000;  // for women
+//int str=5500;  // for adult child
+
+// ---------------- GAME SETTINGS ----------------
+
+int GameID = 269;
+int Maxplayers = 1;
+int gametime = 60;
+int players = 1;
+
+bool start = false;
+
+int pass_ST = 0;
+int pass_S1;
+int pass_S2;
+int hue = 0;
+int count = 0;
+int Turns = 0;
+int Raw_score = 0;
+int score = 0;
+int range_bar_length = 0;
+int Score1_Raw = 0;
+int Score2_Raw = 0;
+int Score1 = 0;
+int Score2 = 0;
+int Score3 = 0;
+int address = 0;
+int Highest_score;
+
+int timer = 0;
+const int potPin = 34;
+
+//--------------------intrupt rutiens---------------------------
+void IRAM_ATTR isr0()
+{
+  pass_S1++;
+}
+void IRAM_ATTR isr1()
+{
+  pass_S2++;
+}
+void IRAM_ATTR isr2()
+{
+  pass_ST = pass_ST + 1;
+}
+
+//---------------------------3segment score board declearation----------------------
+char Fd = 0;
+int randNumber1;
+
+byte digits[10][7] =  {{1, 1, 1, 1, 1, 1, 0}, // Digit 0
+  {0, 1, 1, 0, 0, 0, 0}, // Digit 1
+  {1, 1, 0, 1, 1, 0, 1}, // Digit 2
+  {1, 1, 1, 1, 0, 0, 1}, // Digit 3
+  {0, 1, 1, 0, 0, 1, 1}, // Digit 4
+  {1, 0, 1, 1, 0, 1, 1}, // Digit 5
+  {1, 0, 1, 1, 1, 1, 1}, // Digit 6
+  {1, 1, 1, 0, 0, 0, 0}, // Digit 7
+  {1, 1, 1, 1, 1, 1, 1}, // Digit 8
+  {1, 1, 1, 1, 0, 1, 1} // Digit 9
+};                   // 2D Array for numbers on 7 segment
+long ColorTable[28] =
+{
+  CRGB::Amethyst,     //white
+  CRGB::Aqua,         //pink
+  CRGB::Blue,         //Blue
+  CRGB::Chartreuse,   // Gold
+  CRGB::DarkGreen,    //Red
+  CRGB::DarkMagenta,  //Aqua
+  CRGB::DarkOrange,   // yellow green
+  CRGB::DeepPink,     //Aqua
+  CRGB::Fuchsia,      //Sea blue
+  CRGB::Gold,         //Gold
+  CRGB::GreenYellow,  //off white
+  CRGB::LightCoral,   //white
+  CRGB::Tomato,       //white
+  CRGB::Salmon,       //Pure white
+  CRGB::Red,          // Drak Green
+  CRGB::Orchid,       //blue white
+  CRGB::Sienna,       //yellow white
+  CRGB::Purple,       // aqua
+  CRGB::DarkOrange,   //yellow green
+  CRGB::FloralWhite,  //white
+  CRGB::Yellow        //yellow
+};
+//----------------------------------------------------------------------------------
+//======================================serialtask==================
+void SerialTask(void *pvParameters) {
+  (void) pvParameters;
+
+  String serialdata = "";
+  while (true) {
+    if (MySerial.available()) {
+      serialdata = MySerial.readStringUntil('\n');
+      serialdata.trim();
+
+      if (serialdata.length() > 0) {
+        Serial.println("Received: " + serialdata);
+
+        // Parse players
+        int playersIndex = serialdata.indexOf("\"players\":");
+        if (playersIndex != -1) {
+          int commaIndex = serialdata.indexOf(",", playersIndex);
+          String playersStr = serialdata.substring(playersIndex + 10, commaIndex);
+          players = playersStr.toInt();
+        }
+
+        // Parse timer
+        int timerIndex = serialdata.indexOf("\"timer\":");
+        if (timerIndex != -1) {
+          int commaIndex = serialdata.indexOf(",", timerIndex);
+          String timersStr = serialdata.substring(timerIndex + 8, commaIndex);
+          timersStr.trim();
+          gametime = timersStr.toInt();
+          Serial.print("game time = ");
+          Serial.println(gametime);
+        }
+
+        // Parse start
+        int startIndex = serialdata.indexOf("\"start\":");
+        if (startIndex != -1) {
+          String startStr = serialdata.substring(startIndex + 8);
+          startStr.trim();
+          startStr.replace("}", "");
+          if (startStr == "true") start = true;
+          else start = false;
+        }
+
+        Serial.print("Players = ");
+        Serial.println(players);
+        Serial.print("Start = ");
+        Serial.println(start ? "true" : "false");
+
+        // === Execute actions based on received serialdata ===
+        if (start == false && players == 100) {
+          sendDataToUART(20, Maxplayers, GameID, gametime);
+          players = 0;
+        }
+
+        if (start == true) {
+          Serial.println("started by ble");
+          Score1 = 0;
+
+          sendDataToUART(1, 100, 0, gametime);
+
+
+        }
+
+        if (start == false && players == 0) {
+          Serial.println("time saved");
+          Serial.println(gametime);
+
+        }
+
+        if (start == false && players >= 1 && players < 9) {
+          //STOPED BY BLE
+          Serial.println("stoped by ble");
+          sendDataToUART(1, 200, Score1, gametime);
+          vTaskDelay(pdMS_TO_TICKS(2000));
+          ESP.restart();
+
+        }
+      }
+    }
+
+    // Game timer countdown handling
+    //    if (start) {
+    //      static unsigned long previousMillis = 0;
+    //      unsigned long currentMillis = millis();
+    //      if (currentMillis - previousMillis >= 1000) {
+    //        previousMillis = currentMillis;
+    //        gametime--;
+    //
+    ////        Serial.print("Time left: ");
+    ////        Serial.println(gametime);
+    //        timer = gametime;
+    //        Displaytimerr();
+    //        FastLED.show();
+    //
+    //        //        if (gametime < 1) {
+    //        //
+    //        //         // sendDataToUART(1, 200, Score1, gametime);
+    //        //          vTaskDelay(pdMS_TO_TICKS(5000));
+    //        //          start = false;
+    //        //        }
+    //      }
+    //
+    //      Display1stScore();
+    //      Display2ndScore();
+    //      Display3rdScore();
+    //      Display4thScore();
+    //      Display5thScore();
+    //      FastLED.show();
+    //    }
+
+    vTaskDelay(pdMS_TO_TICKS(20)); // yield CPU, no blocking
+  }
+}
+// ------------------------------------------------------------
+// SEND DATA OVER UART
+// ------------------------------------------------------------
+void sendDataToUART(int id, int status, int score, int time) {
+  String data = "{";
+  data += "\"id\":" + String(id) + ",";
+  data += "\"status\":\"" + String(status) + "\",";
+  data += "\"score\":" + String(score) + ",";
+  data += "\"time\":" + String(time);
+  data += "}";
+
+  MySerial.println(data);
+  Serial.println("Sent: " + data);
+}
+
+// ------------------------------------------------------------
+// STARTUP SEQUENCE (READ LAST 5 PINS OF PCF-B)
+// ------------------------------------------------------------
+
+void setup() {
+  Serial.begin(115200);
+  EEPROM.begin(EEPROM_SIZE);
+  mySoftwareSerial.begin(9600);
+
+    MySerial.begin(9600, SERIAL_8N1, 16, 17);
+  xTaskCreate(
+    SerialTask,
+    "SerialTask",
+    4096,   // Stack size for string handling
+    NULL,
+    1,      // Slightly higher priority than Task1
+    NULL
+  );
+  
+  myDFPlayer.begin(mySoftwareSerial);
+  myDFPlayer.volume(35);
+  randNumber1 = 3;
+  pinMode(IR_SENSOR_1, INPUT_PULLUP);
+  pinMode(IR_SENSOR_2, INPUT_PULLUP);
+  pinMode(button, INPUT_PULLUP);
+  pinMode(button2, INPUT_PULLUP);
+
+  //-------------------------
+
+  //------------------
+
+
+  FastLED.addLeds<WS2812B, LED_PIN1, RGB>(leds1, NUM_LEDS);
+
+
+  FastLED.addLeds<WS2812B, FIRST_SCORE, RGB>(leds1ST_score, NUM_LEDS_score);
+  FastLED.addLeds<WS2812B, SECOND_SCORE, RGB>(leds2ND_score, NUM_LEDS_score);
+  FastLED.addLeds<WS2812B, HIGH_SCORE, RGB>(leds_highest_score, NUM_LEDS_score);
+
+  FastLED.setBrightness(255);
+  myDFPlayer.advertise(1);     // advertise audio
+  delay(1000);
+  pass_ST = 0;
+  start_up();                      // START_UP EFFECT IN LOOP
+
+
+
+
+}
+
+void start_up() {
+  sendDataToUART(1, 500, 0, gametime);
+  start = false;
+  pass_ST = 0;
+
+  hue = 0;
+  count = 0;
+  Turns = 0;
+  Raw_score = 0;
+  score = 0;
+  range_bar_length = 0;
+  Score1_Raw = 0;
+  Score2_Raw = 0;
+  Score1 = 0;
+  Score2 = 0;
+  Score3 = 0;
+  address = 0;
+  timer = 0;
+
+
+  while (1) {
+    int potValue = analogRead(potPin);   // 0–4095
+
+    int mappedValue = map(potValue, 0, 4095, 1600, 4500);
+    Serial.print("Raw: ");
+    Serial.print(potValue);
+    Serial.print("  Mapped: ");
+    Serial.println(mappedValue);
+    
+    for (int i = 0; i < NUM_LEDS; i++) {
+      // leds[i] = CHSV(hue, 255, 255);
+      leds1[i] = CHSV(hue + (i * 4), 255, 255);
+
+    }
+
+    hue++;
+    FastLED.show();
+
+    pass_ST = digitalRead(IR_SENSOR_1);
+    if (pass_ST == 1 && start == true) {
+       str = mappedValue;
+      break;
+     
+    }
+  }
+  Serial.println("while loop break");
+sendDataToUART(1, 100, 0, gametime);
+
+  for (int i = NUM_LEDS ; i >= 0.; i--) {
+    leds1[i] = CRGB::Black;
+
+    FastLED.show();
+    delay(5);
+
+  }
+  for (int i = 0; i < NUM_LEDS_score ; i++) {
+    leds1ST_score[i] = CRGB::Black;
+
+    FastLED.show();
+    delay(5);
+
+  }
+
+  for (int i = 0; i < 6 ; i++) {
+    leds1[i] = CRGB::Green;
+
+    FastLED.show();
+    // delay(5);
+
+  }
+
+
+}
+void loop() {
+  pass_S1 = digitalRead(IR_SENSOR_1);
+  pass_S2 = digitalRead(IR_SENSOR_2);
+
+
+
+
+
+  if (pass_S1 == 0) {
+    //Serial.println("ir one pass");      //---------------------------count starts with first sensor
+    count++;
+
+    if (pass_S2 == 0) {                   //---------------------------second sensor hit and count stops
+      Serial.println("ir two pass");
+
+      Serial.print("COUNT= ");
+      Serial.println(count);
+
+      if (count > str) {
+        count = str;
+      }
+      Raw_score = str - count;
+      score = map(count, str, 0, 0, 1300);
+
+      if (score > 735 && score < 755) {
+        score = score * 1.04;
+      }
+      else if (score > 755 && score < 765) {
+        score = score * 1.02;
+      }
+      else if (score > 765 && score < 775) {
+        score = score * 1.08;
+      }
+      else if (score > 775 ) {
+        score = score * 1.1;
+      }
+
+      range_bar_length = score / 50;
+      if (score == 0) {
+        score = 10;
+        range_bar_length = 1;
+      }
+      Serial.print("Score= ");
+      Serial.println(score);
+      Serial.print("range_bar_length= ");
+      Serial.println(range_bar_length);
+
+
+      for (int j = 0; j < range_bar_length; j++) {
+        int countt = (j * 50) + 50;
+
+
+        // Light up LEDs in bunch
+        for (int i = j * 6; i < j * 6 + 6; i++) {
+          leds1[i] = leds1[i] = CHSV(j * 50 , 255, 255);
+
+
+        }
+
+        delay(countt);
+        FastLED.show();
+        hue++;
+
+
+      }
+      sendDataToUART(1, 100, (score-1), gametime);
+
+      for (int i = 0; i < score; i++) {
+        Score1 = i;
+        
+        Display1stScore();
+        FastLED.show();
+        delayMicroseconds(500);
+        
+      }
+      //myDFPlayer.pause();
+
+
+
+
+
+
+      delay(5000);
+      sendDataToUART(1, 200, Score1, gametime);
+      start_up();
+    }
+  }
+
+
+}
+
+
+
+
+
+void Display1stScore()
+{
+  int cursor = NUM_LEDS_score - 1; // last led number
+
+  if (Score1 < 10)
+    Fd = 1;
+  else if (Score1 >= 10 && Score1 < 100)
+    Fd = 2;
+  else if (Score1 >= 100 && Score1 < 1000)
+    Fd = 3;
+  else if (Score1 >= 1000)
+    Fd = 4;
+
+  for (int i = 1; i <= Fd; i++)
+  {
+    int digit = 0;
+    if (i == 1)
+    {
+      cursor = NUM_LEDS_score - 7; // initial position of LED for last digit
+      digit = (Score1 % 10);
+    }
+    else if (i == 2)
+    {
+      cursor = NUM_LEDS_score - 14;
+      digit = (Score1 / 10 % 10);
+    }
+    else if (i == 3)
+    {
+      cursor = NUM_LEDS_score - 21;
+      digit = (Score1 / 100 % 10);
+    }
+    else if (i == 4)
+    {
+      cursor = 0;
+      digit = (Score1 / 1000 % 10);
+    }
+
+    for (int k = 0; k <= 6; k++)
+    {
+      if (digits[digit][k] == 1)
+      {
+        leds1ST_score[cursor] = CRGB::Blue;
+      }
+      else if (digits[digit][k] == 0)
+      {
+        leds1ST_score[cursor] = 0x000000;
+      };
+      cursor++;
+    }
+  }
+}

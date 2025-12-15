@@ -332,8 +332,11 @@ void setup() {
   timerAlarmWrite(stepTimer, 300, true);
 
   // Start timer
-  timerAlarmEnable(stepTimer);15, GRB>(leds_score, NUM_LEDS_score);
-  FastLED.addLeds<WS2812B, 4, GRB>(ledssec, NUM_LEDS_timer);
+  timerAlarmEnable(stepTimer);
+  
+    pinMode(start_button, INPUT_PULLUP);
+  FastLED.addLeds<WS2812B, 14, GRB>(leds_score, NUM_LEDS_score);
+  FastLED.addLeds<WS2812B, 26, GRB>(ledssec, NUM_LEDS_timer);
   FastLED.setBrightness(255);
   MySerial.begin(9600, SERIAL_8N1, 16, 17);  // Baud, config, RX, TX
   Serial.println("UART Receiver ready on pins 16 (RX) and 17 (TX)");

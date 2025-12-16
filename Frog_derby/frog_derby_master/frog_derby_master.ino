@@ -23,7 +23,7 @@ PCF8574 pcf8574_Limit1(0x38);
 PCF8574 pcf8574_Limit2(0x3C);
 PCF8574 pcf8574_Stepper(0x3A);
 
-int GameID = 54;
+int GameID = 268;
 int Maxplayers = 4;
 int gametime = 60;
 int players = 4;
@@ -78,8 +78,9 @@ unsigned long previousMillis3 = 0;
 unsigned long previousMillis4 = 0;
 unsigned long previousMillis5 = 0;
 
-int scores[5];
-int ranks[5];
+int scores[4];
+int ranks[4];
+int val[6] = {0, 450, 300, 200, 100,0};
 int Score1 = 0, Score2 = 0, Score3 = 0, Score4 = 0, Score5 = 0;
 int rank1 = 0, rank2 = 0, rank3 = 0, rank4 = 0, rank5 = 0;
 int incoming1 = 0, incoming2 = 0, incoming3 = 0, incoming4 = 0, incoming5 = 0;
@@ -93,7 +94,7 @@ bool reached2 = false;
 bool reached3 = false;
 bool reached4 = false;
 bool reached5 = false;
-bool reachedList[4] = { reached1, reached2, reached3, reached4 };
+bool reachedList[5] = { false, false, false, false,false };
 bool allReached = true;
 // Use UART2 for receiving
 HardwareSerial MySerial(2);
@@ -209,16 +210,16 @@ void SerialTask(void *pvParameters) {
           digitalWrite(Buzzer, LOW);
           vTaskDelay(pdMS_TO_TICKS(8000));
           digitalWrite(Dir, LOW);  // coming to startpoint
-       //   limitpin = -1;
-       //   button_pressed_limit = false;
+          //   limitpin = -1;
+          //   button_pressed_limit = false;
           game_end = false;
           start = false;
           //    startup();
-//          vTaskDelay(pdMS_TO_TICKS(5000));
-//          // limitpin = -1;
-//          game_end = true;
+          //          vTaskDelay(pdMS_TO_TICKS(5000));
+          //          // limitpin = -1;
+          //          game_end = true;
           //  button_pressed_limit = false;
-                   ESP.restart();
+          ESP.restart();
 
         }
       }
@@ -262,26 +263,26 @@ void SerialTask(void *pvParameters) {
 void onGameMessage(struct_message data) {
 
   if (data.gameStatus == 100) {
-    if (data.id == 1) {
+    if (data.id == 1 && reachedList[0]== false) {
       incoming1 = 900;
       Score1 = data.score;
 
       Serial.print("score1 = ");
       Serial.println(Score1);
     }
-    if (data.id == 2) {
+    if (data.id == 2 && reachedList[1]== false) {
       incoming2 = 900;
       Score2 = data.score;
       Serial.print("score2 = ");
       Serial.println(Score2);
     }
-    if (data.id == 3) {
+    if (data.id == 3 && reachedList[2]== false) {
       incoming3 = 900;
       Score3 = data.score;
       Serial.print("Score3 = ");
       Serial.println(Score3);
     }
-    if (data.id == 4) {
+    if (data.id == 4 && reachedList[3]== false) {
       incoming4 = 900;
       Score4 = data.score;
       Serial.print("score4 = ");
@@ -321,7 +322,7 @@ void setup() {
   setupGameComm();
   pinMode(Dir, OUTPUT);
   pinMode(Step, OUTPUT);
-  pinMode(start_button,INPUT_PULLUP);
+  pinMode(start_button, INPUT_PULLUP);
   // 1us tick timer (80MHz / 80)
   stepTimer = timerBegin(0, 80, true);
 
@@ -333,8 +334,8 @@ void setup() {
 
   // Start timer
   timerAlarmEnable(stepTimer);
-  
-    pinMode(start_button, INPUT_PULLUP);
+
+  pinMode(start_button, INPUT_PULLUP);
   FastLED.addLeds<WS2812B, 14, GRB>(leds_score, NUM_LEDS_score);
   FastLED.addLeds<WS2812B, 26, GRB>(ledssec, NUM_LEDS_timer);
   FastLED.setBrightness(255);
@@ -394,7 +395,7 @@ void sendDataToUART(int id, int status, int score, int time) {
   data += "}";
 
   MySerial.println(data);                   // Send via UART
-  Serial.println("Sent over UART: " + data); // Debug print
+ // Serial.println("Sent over UART: " + data); // Debug print
 }
 
 void startup() {
@@ -541,7 +542,7 @@ void startpoint() {
     }
   }
 }
- 
+
 void loop() {
   for (int i = 0; i < 8; i++) {
     // Use forceReadNow to read the status
@@ -559,6 +560,15 @@ void loop() {
         reached1 = true;
         reachedList[0] = true;
         limitpin = -1;
+        int temprank = 0;
+        for (int i = 0; i < 4; i++) {
+          if (reachedList[i]) {
+            temprank++;
+          }
+        }
+        Score1 = Score1 + val[temprank];
+        Serial.print("scoew1 = ");
+        Serial.println(Score1);
       }
       if (i == 1 && reached2 == false) {
         Serial.println("player2 reached ");
@@ -569,6 +579,15 @@ void loop() {
         reached2 = true;
         reachedList[1] = true;
         limitpin = -1;
+        int temprank = 0;
+        for (int i = 0; i < 4; i++) {
+          if (reachedList[i]) {
+            temprank++;
+          }
+        }
+        Score2 = Score2 + val[temprank];
+                Serial.print("score2 = ");
+        Serial.println(Score2);
       }
       if (i == 2 && reached3 == false) {
         Serial.println("player3 reached ");
@@ -579,6 +598,15 @@ void loop() {
         reached3 = true;
         reachedList[2] = true;
         limitpin = -1;
+        int temprank = 0;
+        for (int i = 0; i < 4; i++) {
+          if (reachedList[i]) {
+            temprank++;
+          }
+        }
+        Score3 = Score3 + val[temprank];
+        Serial.print("scoew3 = ");
+        Serial.println(Score3);
       }
 
       if (i == 3 && reached4 == false ) {
@@ -590,18 +618,18 @@ void loop() {
         reachedList[3] = true;
         reached4 = true;
         limitpin = -1;
+        int temprank = 0;
+        for (int i = 0; i < 4; i++) {
+          if (reachedList[i]) {
+            temprank++;
+          }
+        }
+        Score4 = Score4 + val[temprank];
+                Serial.print("scoew4 = ");
+        Serial.println(Score4);
       }
 
-      if (i == 4 && reached5 == false ) {
-        Serial.println("player5 reached ");
-        sendGameDataToPeer(4, 5, 200, 0, gametime);
-        sendDataToUART(5, 400, Score3, 5);
-        pcf8574_Stepper.digitalWrite(4, LOW);
-        button_pressed_limit = false;
-        reached5 = true;
-        reachedList[4] = true;
-        limitpin = -1;
-      }
+
     }
   }
 
@@ -663,10 +691,10 @@ void loop() {
 
       pass1 = incoming1 + 500;
       datapass1 = 1;
-      Serial.print("pass1= ");
-      Serial.println(pass1);
+//      Serial.print("pass1= ");
+//      Serial.println(pass1);
       incoming1 = 0;
-      Serial.println("Stepper one start ");
+     // Serial.println("Stepper one start ");
       pcf8574_Stepper.digitalWrite(0, HIGH);
     }
     if (incoming2 > 0  && reached2 == false  ) {
@@ -674,10 +702,10 @@ void loop() {
       //      sendDataToUART(2, 100, Score2, 5);
       pass2 = incoming2 + 500;
       datapass2 = 1;
-      Serial.print("pass2= ");
-      Serial.println(pass2);
+//      Serial.print("pass2= ");
+//      Serial.println(pass2);
       incoming2 = 0;
-      Serial.println("Stepper two start ");
+    //  Serial.println("Stepper two start ");
       pcf8574_Stepper.digitalWrite(1, HIGH);
     }
     if (incoming3 > 0  && reached3 == false  ) {
@@ -685,10 +713,10 @@ void loop() {
       //      sendDataToUART(3, 100, Score3, 5);
       pass3 = incoming3 + 500;
       datapass3 = 1;
-      Serial.print("pass3= ");
-      Serial.println(pass3);
+//      Serial.print("pass3= ");
+//      Serial.println(pass3);
       incoming3 = 0;
-      Serial.println("Stepper three start ");
+   //   Serial.println("Stepper three start ");
       pcf8574_Stepper.digitalWrite(2, HIGH);
     }
     if (incoming4 > 0  && reached4 == false  ) {
@@ -696,10 +724,10 @@ void loop() {
       //      sendDataToUART(4, 100, Score4, 5);
       pass4 = incoming4 + 500;
       datapass4 = 1;
-      Serial.print("pass4= ");
-      Serial.println(pass4);
+//      Serial.print("pass4= ");
+//      Serial.println(pass4);
       incoming4 = 0;
-      Serial.println("Stepper four start ");
+   //   Serial.println("Stepper four start ");
       pcf8574_Stepper.digitalWrite(3, HIGH);
     }
 
@@ -709,8 +737,8 @@ void loop() {
 
 
   if (pass1 >= 1) {
-    Serial.print("pass1= ");
-    Serial.println(pass1);
+//    Serial.print("pass1= ");
+//    Serial.println(pass1);
 
     unsigned long currentMillis = millis();
     if (datapass1 > 0) {
@@ -721,7 +749,7 @@ void loop() {
       previousMillis1 = currentMillis;
       pass1 = 0;
       //  sendDataToUART(1, 100, Score1, 5);
-      Serial.println("stepper1 stops ");
+  //    Serial.println("stepper1 stops ");
       pcf8574_Stepper.digitalWrite(0, LOW);
 
     }
@@ -737,7 +765,7 @@ void loop() {
       previousMillis2 = currentMillis2;
       pass2 = 0;
       //  sendDataToUART(2, 100, Score2, 5);
-      Serial.println("stepper2 stops ");
+    //  Serial.println("stepper2 stops ");
       pcf8574_Stepper.digitalWrite(1, LOW);
 
     }
@@ -753,7 +781,7 @@ void loop() {
       previousMillis3 = currentMillis3;
       //  sendDataToUART(3, 100, Score3, 5);
       pass3 = 0;
-      Serial.println("stepper3 stops ");
+    //  Serial.println("stepper3 stops ");
       pcf8574_Stepper.digitalWrite(2, LOW);
 
     }
@@ -770,7 +798,7 @@ void loop() {
       previousMillis4 = currentMillis4;
       //  sendDataToUART(4, 100, Score4, 5);
       pass4 = 0;
-      Serial.println("stepper4 stops ");
+    //  Serial.println("stepper4 stops ");
       pcf8574_Stepper.digitalWrite(3, LOW);
 
     }
@@ -794,9 +822,9 @@ void loop() {
   scores[3] = Score4;
   // scores[4] = Score5;
 
-  for (int i = 0; i < 5; i++) {
+  for (int i = 0; i < players; i++) {
     int rank = 1;
-    for (int j = 0; j < 5; j++) {
+    for (int j = 0; j < players; j++) {
       if (scores[j] > scores[i]) {
         rank++;
       }
@@ -805,13 +833,13 @@ void loop() {
   }
 
   // Print scores and ranks
-  for (int i = 0; i < 5; i++) {
-    Serial.print("Player ");
-    Serial.print(i + 1);
-    Serial.print(" Score: ");
-    Serial.print(scores[i]);
-    Serial.print("  Rank: ");
-    Serial.println(ranks[i]);
+  for (int i = 0; i < 4; i++) {
+//    Serial.print("Player ");
+//    Serial.print(i + 1);
+//    Serial.print(" Score: ");
+//    Serial.print(scores[i]);
+//    Serial.print("  Rank: ");
+//    Serial.println(ranks[i]);
     if (i == 0 ) {
       rank1 = ranks[i];
       Display1stScore();
@@ -828,10 +856,7 @@ void loop() {
       rank4 = ranks[i];
       Display4thScore();
     }
-    if (i == 4) {
-      rank5 = ranks[i];
-      Display5thScore();
-    }
+
 
   }
   FastLED.show();

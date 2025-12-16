@@ -30,7 +30,7 @@ HardwareSerial MySerial(2);
 bool ready = false;
 int recivedtime = 60;
 int counting = 0;
-int players = 1;
+int players = 5;
 int id = 0;
 int status = 0;
 int score = 0;
@@ -45,8 +45,8 @@ String command;
 int startplayer = 0;
 
 
-int max_players = 4;
-int GameID = 54;
+int max_players = 5;
+int GameID = 267;
 int default_time = 60;
 String difficulty = "hard";
 String gameMode = "competition";
@@ -334,6 +334,14 @@ void handleTrigger(String command) {
     }
     sendBLE(command);
   }
+  else if (triggerCommand == "timesup") {
+    Serial.println("Game times up triggered!");
+    sendDataToUART(counting, false, recivedtime);
+    gamestat = "end";
+    ready = false;
+    sendBLE(command);
+
+  }
   else {
     sendBLE("not_ready");
   }
@@ -436,7 +444,7 @@ void uartreceive() {
     }
 
     if (id != 20) {
-      if (deviceConnected) {
+      if (deviceConnected && status != 500) {
         handleStatus("20");
       }
     }
@@ -463,7 +471,7 @@ void setup() {
   createLogFile();
   MySerial.begin(9600, SERIAL_8N1, 16, 17);
   Serial.println("UART2 started on pins 16(RX),17(TX)");
-  BLEDevice::init("Funtoo_frog_54");
+  BLEDevice::init("Funtoo_derby_267");
   BLEServer *pServer = BLEDevice::createServer();
   pServer->setCallbacks(new MyServerCallbacks());
 

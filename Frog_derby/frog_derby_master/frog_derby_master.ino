@@ -219,7 +219,8 @@ void SerialTask(void *pvParameters) {
           //          // limitpin = -1;
           //          game_end = true;
           //  button_pressed_limit = false;
-          ESP.restart();
+         // ESP.restart();
+        // resetGameState();
 
         }
       }
@@ -486,6 +487,61 @@ void startup() {
   reached5 = false;
   Serial.println("game started ");
 }
+void resetGameState() {
+  Serial.println("Soft reset: resetting game state");
+
+  // ---- STOP ALL MOTION ----
+  for (int i = 0; i < 8; i++) {
+    pcf8574_Stepper.digitalWrite(i, LOW);
+  }
+  timerAlarmDisable(stepTimer);
+
+  // ---- RESET FLAGS ----
+  start = false;
+  game_end = false;
+  datapass = false;
+  button_pressed_limit = false;
+
+  // ---- RESET SCORES ----
+  Score1 = 0;
+  Score2 = 0;
+  Score3 = 0;
+  Score4 = 0;
+  Score5 = 0;
+
+  // ---- RESET PASS VALUES ----
+  pass1 = pass2 = pass3 = pass4 = pass5 = 0;
+  datapass1 = datapass2 = datapass3 = datapass4 = datapass5 = 0;
+
+  // ---- RESET REACHED STATE ----
+  reached1 = reached2 = reached3 = reached4 = reached5 = false;
+  for (int i = 0; i < 5; i++) {
+    reachedList[i] = false;
+  }
+
+  // ---- RESET TIMERS ----
+  previousMillis1 = previousMillis2 = previousMillis3 = 0;
+  previousMillis4 = previousMillis5 = 0;
+
+  // ---- RESET LEDS ----
+  fill_solid(leds_score, NUM_LEDS_score, CRGB::Black);
+  fill_solid(ledssec, NUM_LEDS_timer, CRGB::Black);
+  FastLED.show();
+
+  // ---- RESET STEPPER DIRECTION ----
+  digitalWrite(Dir, HIGH);   // go to start point
+
+  delay(500);
+
+  // ---- RE-ENABLE TIMER ----
+  timerAlarmEnable(stepTimer);
+
+  // ---- GO BACK TO STARTUP FLOW ----
+  startup();
+
+  Serial.println("Game ready for next round");
+}
+
 
 void startpoint() {
   for (int i = 0; i < 8; i++) {
@@ -861,6 +917,17 @@ void loop() {
   }
   FastLED.show();
   //********************************************************************************
+
+  if(start==false){
+    
+        digitalWrite(Dir, LOW);  // coming to startpoint
+    limitpin = -1;
+    button_pressed_limit = false;
+    game_end = false;
+    start = false;
+    delay(2000);
+    startup();
+    }
 }
 
 
